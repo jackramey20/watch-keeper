@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Watch Keeper</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">WK</div>
+        <div>
+          <h1>Watch Keeper</h1>
+          <p>Duty & Qualification Manager</p>
+        </div>
+      </div>
+
+      <nav>
+        <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+        <button class="nav-btn" data-page="crew">Crew Roster</button>
+        <button class="nav-btn" data-page="assets">Assets</button>
+        <button class="nav-btn" data-page="sections">Duty Sections</button>
+        <button class="nav-btn" data-page="readiness">Readiness Check</button>
+        <button class="nav-btn" data-page="scenarios">Scenario Builder</button>
+        <button class="nav-btn" data-page="smart-settings">Smart Ass...</button>
+        <button class="nav-btn" data-page="settings">Settings</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="page-title">Dashboard</h2>
+          <p id="page-subtitle">Station readiness overview</p>
+        </div>
+
+        <button class="primary-btn" id="openAddMember">+ Add Member</button>
+      </header>
+
+      <section id="content"></section>
+    </main>
+  </div>
+
+  <div class="modal hidden" id="memberModal">
+    <div class="modal-card">
+      <h2 id="modalTitle">Add Crew Member</h2>
+
+      <label>Rank / Rate</label>
+      <input id="memberRank" placeholder="Example: BM2">
+
+      <label>First Name</label>
+      <input id="memberFirstName" placeholder="Example: John">
+
+      <label>Middle Initial</label>
+      <input id="memberMiddleInitial" placeholder="Example: A">
+
+      <label>Last Name</label>
+      <input id="memberLastName" placeholder="Example: Johnson">
+
+      <label>Title</label>
+      <div class="assignment-row">
+        <select id="memberTitle">
+          <option>None</option>
+          <option>CO</option>
+          <option>XPO</option>
+          <option>EPO</option>
+          <option>AEPO</option>
+          <option>1LT</option>
+          <option>OPS</option>
+          <option>TPO</option>
+          <option>MAA</option>
+          <option>HAZMAT</option>
+          <option>Custom</option>
+        </select>
+
+        <input id="customTitle" placeholder="Custom title">
+      </div>
+
+      <label>Department</label>
+      <select id="memberDept">
+        <option>Deck</option>
+        <option>Engineering</option>
+        <option>Law Enforcement</option>
+        <option>Command</option>
+        <option>Other</option>
+      </select>
+
+      <label>Assignment</label>
+      <div class="assignment-row">
+        <select id="memberSection">
+          <option>PORT</option>
+          <option>STBD</option>
+          <option>Day Worker</option>
+          <option>Reservist</option>
+          <option>TDY to Station</option>
+        </select>
+
+        <button class="secondary-btn" id="smartAssignBtn" type="button">
+          Smart Assign
+        </button>
+      </div>
+
+      <div id="modalSmartResult" class="modal-smart-result hidden"></div>
+
+      <label>Status</label>
+      <select id="memberStatus">
+        <option>Available</option>
+        <option>Leave</option>
+        <option>TDY</option>
+        <option>Medical</option>
+        <option>Restricted</option>
+      </select>
+
+      <label>Qualifications</label>
+      <div class="checks">
+        <label><input type="checkbox" value="OOD"> OOD</label>
+        <label><input type="checkbox" value="WCH"> WCH</label>
+        <label><input type="checkbox" value="PCX"> PCX</label>
+        <label><input type="checkbox" value="CX"> CX</label>
+        <label><input type="checkbox" value="PG"> PG</label>
+        <label><input type="checkbox" value="ENG"> ENG</label>
+        <label><input type="checkbox" value="BO"> BO</label>
+        <label><input type="checkbox" value="BTM"> BTM</label>
+        <label><input type="checkbox" value="CR"> CR</label>
+        <label><input type="checkbox" value="B/I"> B/I</label>
+      </div>
+
+      <label>Collaterals</label>
+      <div class="checks">
+        <label><input type="checkbox" value="Section Leader"> Section Leader</label>
+        <label><input type="checkbox" value="LEI"> LEI</label>
+        <label><input type="checkbox" value="EOW"> EOW</label>
+        <label><input type="checkbox" value="Morale PO"> Morale PO</label>
+        <label><input type="checkbox" value="P-6 PO"> P-6 PO</label>
+        <label><input type="checkbox" value="45631 Keeper"> 45631 Keeper</label>
+        <label><input type="checkbox" value="45670 Keeper"> 45670 Keeper</label>
+        <label><input type="checkbox" value="33134 Keeper"> 33134 Keeper</label>
+        <label><input type="checkbox" value="33123 Keeper"> 33123 Keeper</label>
+        <label><input type="checkbox" value="Mail Clerk"> Mail Clerk</label>
+        <label><input type="checkbox" value="Custom"> Custom</label>
+      </div>
+
+      <label>Custom Collateral</label>
+      <input id="customCollateral" placeholder="Example: Training PO">
+
+      <label>Projected Loss Date</label>
+      <input id="lossDate" type="date">
+
+      <label>Loss Reason</label>
+      <select id="lossReason">
+        <option>None</option>
+        <option>A-School</option>
+        <option>PCS</option>
+        <option>Retirement</option>
+        <option>Separation</option>
+        <option>TDY</option>
+        <option>Other</option>
+      </select>
+
+      <label>Notes</label>
+      <textarea id="memberNotes" placeholder="Example: TDY next month, A-school in 2 months"></textarea>
+
+      <div class="modal-actions">
+        <button class="secondary-btn" id="closeModal">Cancel</button>
+        <button class="primary-btn" id="saveMember">Save Member</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="assetModal">
+  <div class="modal-card">
+    <h2 id="assetModalTitle">Add Asset</h2>
+
+    <label>Asset Name / Hull Number</label>
+    <input id="assetName" placeholder="Example: 45631">
+
+    <label>Asset Type</label>
+    <select id="assetType">
+      <option>45 RB-M</option>
+      <option>33 SPC-LE</option>
+      <option>29 RBS-II</option>
+      <option>24 SPC-SW</option>
+      <option>Other</option>
+    </select>
+
+    <label>Pursuit Capable</label>
+    <select id="assetPursuit">
+      <option>Yes</option>
+      <option>No</option>
+    </select>
+
+    <label>Default Crew Size</label>
+    <input id="assetCrewSize" type="number" min="1" value="4">
+
+    <label>Default Mission Profile</label>
+    <select id="assetMissionProfile">
+      <option>SAR</option>
+      <option>LE Boarding</option>
+      <option>Pursuit</option>
+      <option>Training</option>
+      <option>Multi-Asset</option>
+    </select>
+
+    <label>Status</label>
+    <select id="assetStatus">
+      <option>FMC</option>
+      <option>PMC</option>
+      <option>NMC</option>
+    </select>
+
+    <div id="pmcBox" class="hidden">
+      <label>PMC Description</label>
+      <textarea id="assetPmcDescription" placeholder="Explain why the asset is partial mission capable"></textarea>
+    </div>
+
+    <label>Notes</label>
+    <textarea id="assetNotes" placeholder="Example: electronics issue, trailer issue, scheduled maintenance, etc."></textarea>
+
+    <div class="modal-actions">
+      <button class="secondary-btn" id="closeAssetModal">Cancel</button>
+      <button class="primary-btn" id="saveAsset">Save Asset</button>
+    </div>
+  </div>
+</div>
+
+  <input type="file" id="importRosterInput" accept=".json" class="hidden">
+
+  <script src="renderer.js"></script>
+</body>
+</html>
