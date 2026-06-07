@@ -19,10 +19,13 @@
       <nav>
         <button class="nav-btn active" data-page="dashboard">Dashboard</button>
         <button class="nav-btn" data-page="crew">Crew Roster</button>
+        <button class="nav-btn" data-page="worklist">Worklist</button>
         <button class="nav-btn" data-page="assets">Assets</button>
         <button class="nav-btn" data-page="sections">Duty Sections</button>
         <button class="nav-btn" data-page="readiness">Readiness Check</button>
         <button class="nav-btn" data-page="scenarios">Scenario Builder</button>
+        <button class="nav-btn" data-page="qualifications">Qualifications</button>
+        <button class="nav-btn" data-page="calendar">Calendar</button>
         <button class="nav-btn" data-page="smart-settings">Smart Ass...</button>
         <button class="nav-btn" data-page="settings">Settings</button>
       </nav>
@@ -157,6 +160,15 @@
         <option>TDY</option>
         <option>Other</option>
       </select>
+
+      <label>EMPLID</label>
+      <input id="memberEmplid" type="text" placeholder="Optional">
+
+      <label>Expected Arrival / Start Duty Date</label>
+      <input id="memberArrivalDate" type="date">
+
+      <label>Expected Section Swap Date</label>
+      <input id="memberSwapDate" type="date">
 
       <label>Notes</label>
       <textarea id="memberNotes" placeholder="Example: TDY next month, A-school in 2 months"></textarea>
