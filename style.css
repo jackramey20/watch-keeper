@@ -875,3 +875,276 @@ textarea {
   z-index: 10001;
   pointer-events: auto;
 }
+
+.dashboard-date-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+#plannedCrewDateBox {
+  border-color: rgba(37, 99, 235, 0.7);
+}
+
+#assetModal {
+  outline: none;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.calendar-header h3 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+}
+
+.calendar-weekday {
+  font-weight: 700;
+  text-align: center;
+  padding: 8px;
+  opacity: 0.8;
+}
+
+.calendar-cell {
+  min-height: 95px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.75);
+  cursor: pointer;
+}
+
+.calendar-cell:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.calendar-cell.empty {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.calendar-duty {
+  margin-top: 12px;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.port-day {
+  border-color: rgba(239, 68, 68, 0.65);
+  background: rgba(127, 29, 29, 0.35);
+}
+
+.stbd-day {
+  border-color: rgba(34, 197, 94, 0.65);
+  background: rgba(20, 83, 45, 0.35);
+}
+
+@media (max-width: 900px) {
+  .calendar-grid {
+    gap: 6px;
+  }
+
+  .calendar-cell {
+    min-height: 72px;
+    padding: 7px;
+    font-size: 12px;
+  }
+
+  .calendar-duty {
+    font-size: 12px;
+  }
+}
+
+.calendar-crews {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.calendar-crew-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.15);
+}
+
+.calendar-more {
+  font-size: 10px;
+  opacity: .75;
+}
+
+.override-day {
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.75);
+}
+
+.calendar-override {
+  margin-top: 5px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: #fde68a;
+}
+
+.qual-date-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.qual-status {
+  display: inline-block;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.qual-current {
+  background: rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.7);
+  color: #bbf7d0;
+}
+
+.qual-warning {
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.7);
+  color: #fde68a;
+}
+
+.qual-overdue {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.7);
+  color: #fecaca;
+}
+
+.qual-no-date {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  color: #cbd5e1;
+}
+
+.qual-overdue {
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.7);
+  color: #fecaca;
+}
+
+.on-duty-panel {
+  position: relative;
+  border: 2px solid rgba(245, 158, 11, 0.9) !important;
+  padding-top: 24px;
+}
+
+.on-duty-label {
+  position: absolute;
+  top: -11px;
+  left: 24px;
+  padding: 0 10px;
+  background: #0f172a;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.work-item {
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 14px 0;
+}
+
+/*
+.work-main-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+  */
+
+.work-check-row,
+.work-delete-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/*
+.work-check-row {
+  flex: 1;
+}
+
+.work-delete-row {
+  opacity: 0.75;
+  font-size: 13px;
+}
+  */
+
+.work-completed {
+  opacity: 0.7;
+}
+
+.work-completed strong {
+  text-decoration: line-through;
+}
+
+.work-task-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.work-task-left,
+.work-delete-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.work-task-left {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.work-delete-right {
+  justify-content: flex-end;
+  white-space: nowrap;
+  opacity: 0.75;
+  font-size: 13px;
+}
+
+.work-meta,
+.work-notes {
+  margin-left: 28px;
+}
+
+.duty-sections-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .duty-sections-row {
+    grid-template-columns: 1fr;
+  }
+}
