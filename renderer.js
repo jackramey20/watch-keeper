@@ -1,43 +1,47 @@
+// ================================
+// WATCH KEEPER - renderer.js
+// Clean organized rebuild
+// ================================
+
+// ---------- Global State ----------
 let editingIndex = null;
 let editingAssetIndex = null;
+let pendingPlannedCrewPackageId = null;
 
 let crew = JSON.parse(localStorage.getItem("watchKeeperCrew")) || [];
-let missionPackages = JSON.parse(localStorage.getItem("wathcKeeperMissionPackages")) || [];
+let assets = JSON.parse(localStorage.getItem("watchKeeperAssets")) || [];
+let missionPackages = JSON.parse(localStorage.getItem("watchKeeperMissionPackages")) || [];
+let plannedCrews = JSON.parse(localStorage.getItem("watchKeeperPlannedCrews")) || [];
+let dutyOverrides = JSON.parse(localStorage.getItem("watchKeeperDutyOverrides")) || {};
 
-const content = document.getElementById("content");
-const pageTitle = document.getElementById("page-title");
-const pageSubtitle = document.getElementById("page-subtitle");
-const modal = document.getElementById("memberModal");
-const modalTitle = document.getElementById("modalTitle");
-const modalSmartResult = document.getElementById("modalSmartResult");
+let calendarMonth = new Date().getMonth();
+let calendarYear = new Date().getFullYear();
+let qualificationFilter = "All";
 
-const trackedQuals = ["OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR", "B/I"];
-const readinessRequirements = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
-const topbarButton = document.getElementById("openAddMember");
-const assetModal = document.getElementById("assetModal");
-const assetModalTitle = document.getElementById("assetModalTitle");
+let workItems =
+  JSON.parse(localStorage.getItem("watchKeeperWorkItems"))
+  || [];
+
+let rotationSettings = JSON.parse(localStorage.getItem("watchKeeperRotationSettings")) || {
+  currentSection: "PORT",
+  dutyStartDate: new Date().toISOString().slice(0, 10),
+  pattern: "2-on-2-off"
+};
 
 let smartSettings = JSON.parse(localStorage.getItem("watchKeeperSmartSettings")) || {
   personnelBalance: true,
   personnelWeight: 5,
-
   qualificationBalance: true,
   qualificationWeight: 8,
-
   departmentBalance: true,
   departmentWeight: 8,
-
   leadershipBalance: true,
   leadershipWeight: 5,
-
   rankBalance: true,
   rankWeight: 5,
-
   breakInMentorPriority: true,
   breakInWeight: 7,
-
   philosophy: "Balanced",
-
   criticalQualWeights: {
     PCX: 10,
     PG: 8,
@@ -47,37 +51,30 @@ let smartSettings = JSON.parse(localStorage.getItem("watchKeeperSmartSettings"))
     BTM: 5,
     WCH: 3
   },
-
   futureLossPrediction: true,
   showRecommendationReasons: true
 };
 
-function saveSmartSettings() {
-  localStorage.setItem("watchKeeperSmartSettings", JSON.stringify(smartSettings));
-}
+let dashboardSectionView = null;
+let dashboardDutyDate = new Date().toISOString().slice(0, 10);
 
-function saveCrew() {
-  localStorage.setItem("watchKeeperCrew", JSON.stringify(crew));
-}
+// ---------- DOM References ----------
+const content = document.getElementById("content");
+const pageTitle = document.getElementById("page-title");
+const pageSubtitle = document.getElementById("page-subtitle");
 
-let assets = JSON.parse(localStorage.getItem("watchKeeperAssets")) || [];
+const topbarButton = document.getElementById("openAddMember");
 
-function saveAssets() {
-  localStorage.setItem("watchKeeperAssets", JSON.stringify(assets));
-}
+const modal = document.getElementById("memberModal");
+const modalTitle = document.getElementById("modalTitle");
+const modalSmartResult = document.getElementById("modalSmartResult");
 
-function saveMissionPackages() {
-  localStorage.setItem("watchKeeperMissionPackages", JSON.stringify(missionPackages));
-}
+const assetModal = document.getElementById("assetModal");
+const assetModalTitle = document.getElementById("assetModalTitle");
 
-function getFullDisplayName(member) {
-  if (member.lastName || member.firstName || member.rank) {
-    const middle = member.middleInitial ? `${member.middleInitial}.` : "";
-    return `${member.lastName || ""}, ${member.firstName || ""} ${middle} - ${member.rank || ""}`.trim();
-  }
-
-  return member.name || "Unnamed Member";
-}
+// ---------- Constants ----------
+const trackedQuals = ["OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR", "B/I"];
+const readinessRequirements = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
 
 const rankOrder = [
   "CO", "CDR", "LCDR", "LT", "LTJG", "ENS",
@@ -89,90 +86,101 @@ const rankOrder = [
   "SN", "FN", "AN", "SA", "FA", "AA", "SR"
 ];
 
-function updateTopbarButton(page) {
-  if (page === "dashboard" || page === "crew") {
-    topbarButton.style.display = "block";
-    topbarButton.textContent = "+ Add Member";
-    topbarButton.onclick = () => {
-      clearModal();
-      modal.classList.remove("hidden");
-      document.querySelector(".modal-card").scrollTop = 0;
-    };
+// ---------- Save Functions ----------
+function saveCrew() {
+  localStorage.setItem("watchKeeperCrew", JSON.stringify(crew));
+}
 
-    } else if (page === "assets") {
-      topbarButton.style.display = "block";
-      topbarButton.textContent = "+ Add Asset";
-      topbarButton.onclick = () => {
-        clearAssetModal();
-        assetModal.classList.remove("hidden");
+function saveAssets() {
+  localStorage.setItem("watchKeeperAssets", JSON.stringify(assets));
+}
 
-        const modalCard = assetModal.querySelector(".modal-card");
-        modalCard.scrollTop = 0;
+function saveMissionPackages() {
+  localStorage.setItem("watchKeeperMissionPackages", JSON.stringify(missionPackages));
+}
 
-        setTimeout(() => {
-          document.getElementById("assetName").focus();
-        }, 50);
-    };
-  } else {
-    topbarButton.style.display = "none";
+function savePlannedCrews() {
+  localStorage.setItem("watchKeeperPlannedCrews", JSON.stringify(plannedCrews));
+}
+
+function saveRotationSettings() {
+  localStorage.setItem("watchKeeperRotationSettings", JSON.stringify(rotationSettings));
+}
+
+function saveSmartSettings() {
+  localStorage.setItem("watchKeeperSmartSettings", JSON.stringify(smartSettings));
+}
+
+function saveDutyOverrides() {
+  localStorage.setItem("watchKeeperDutyOverrides", JSON.stringify(dutyOverrides));
+}
+
+function saveWorkItems() {
+  localStorage.setItem(
+    "watchKeeperWorkItems",
+    JSON.stringify(workItems)
+  );
+}
+
+// ---------- Basic Helpers ----------
+function safeValue(id, fallback = "") {
+  const el = document.getElementById(id);
+  return el ? el.value : fallback;
+}
+
+function setValue(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value;
+}
+
+function showElement(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.remove("hidden");
+}
+
+function hideElement(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.add("hidden");
+}
+
+function getFullDisplayName(member) {
+  if (!member) return "Unnamed Member";
+
+  const rank = member.rank || "";
+  const first = member.firstName || "";
+  const middle = member.middleInitial ? `${member.middleInitial.replace(".", "")}.` : "";
+  const last = member.lastName || "";
+
+  if (last || first || rank) {
+    return `${last}, ${first} ${middle} - ${rank}`.replace(/\s+/g, " ").trim();
   }
+
+  return member.name || "Unnamed Member";
 }
 
 function getRankValue(rank) {
-  const normalizedRank = (rank || "").toUpperCase();
-  const index = rankOrder.indexOf(normalizedRank);
-
+  const normalized = (rank || "").toUpperCase();
+  const index = rankOrder.indexOf(normalized);
   return index === -1 ? 999 : index;
 }
 
 function sortMembers(members) {
   return [...members].sort((a, b) => {
     const rankCompare = getRankValue(a.rank) - getRankValue(b.rank);
-
-    if (rankCompare !== 0) {
-      return rankCompare;
-    }
-
+    if (rankCompare !== 0) return rankCompare;
     return (a.lastName || "").localeCompare(b.lastName || "");
   });
 }
 
-function getGroup(value) {
-  return sortMembers(crew.filter(member => member.section === value));
+function getGroup(sectionName) {
+  return sortMembers(crew.filter(member => member.section === sectionName));
 }
 
-function getAvailableGroup(value) {
-  return sortMembers(crew.filter(member => member.section === value && member.status === "Available"));
-}
-
-function getSelectedModalQuals() {
-  return [...document.querySelectorAll(".checks input:checked")]
-    .filter(input => trackedQuals.includes(input.value))
-    .map(input => input.value);
-}
-
-function getSelectedModalCollaterals() {
-  const selected = [...document.querySelectorAll(".checks input:checked")]
-    .filter(input => !trackedQuals.includes(input.value))
-    .map(input => input.value);
-
-  const customCollateral = document.getElementById("customCollateral").value.trim();
-
-  if (selected.includes("Custom") && customCollateral) {
-    return selected.filter(item => item !== "Custom").concat(customCollateral);
-  }
-
-  return selected.filter(item => item !== "Custom");
-}
-
-function getMemberTitle() {
-  const title = document.getElementById("memberTitle").value;
-  const customTitle = document.getElementById("customTitle").value.trim();
-
-  if (title === "Custom") return customTitle;
-  if (title === "None") return "";
-
-  return title;
+function getAvailableGroup(sectionName) {
+  return sortMembers(crew.filter(member =>
+    member.section === sectionName &&
+    member.status === "Available"
+  ));
 }
 
 function countQual(members, qual) {
@@ -194,7 +202,7 @@ function countLEQualified(members) {
 }
 
 function memberHasQual(member, qual) {
-  if (!member.quals) return false;
+  if (!member || !member.quals) return false;
 
   if (member.quals.includes(qual)) return true;
 
@@ -221,329 +229,232 @@ function countEffectiveQual(members, qual) {
   return members.filter(member => memberHasQual(member, qual)).length;
 }
 
-function checkReadiness(sectionName) {
-  const members = getAvailableGroup(sectionName);
-  const missing = [];
+function isDuplicateMember(rank, firstName, middleInitial, lastName, editingIndexValue = null) {
+  const clean = value => (value || "").trim().replace(".", "").toLowerCase();
 
-  readinessRequirements.forEach(req => {
-    if (countEffectiveQual(members, req) < 1) {
-      missing.push(req);
-    }
+  return crew.some((member, index) => {
+    if (editingIndexValue !== null && index === editingIndexValue) return false;
+
+    return (
+      clean(member.rank) === clean(rank) &&
+      clean(member.firstName) === clean(firstName) &&
+      clean(member.middleInitial) === clean(middleInitial) &&
+      clean(member.lastName) === clean(lastName)
+    );
   });
-
-  return {
-    section: sectionName,
-    ready: missing.length === 0,
-    missing,
-    members
-  };
 }
 
-function recommendSectionForNewMember(dept, quals) {
-  const port = getGroup("PORT");
-  const stbd = getGroup("STBD");
-
-  let portScore = 0;
-  let stbdScore = 0;
-
-  const portReasons = [];
-  const stbdReasons = [];
-  const neutralReasons = [];
-
-  if (port.length < stbd.length) {
-    portScore += smartSettings.personnelWeight;
-    portReasons.push("PORT currently has fewer total personnel.");
-  } else if (stbd.length < port.length) {
-    stbdScore += smartSettings.personnelWeight;
-    stbdReasons.push("STBD currently has fewer total personnel.");
-  } else {
-    neutralReasons.push("PORT and STBD have equal personnel counts.");
+// ---------- Modal Helpers ----------
+function showMemberError(message, focusId = null) {
+  if (modalSmartResult) {
+    modalSmartResult.classList.remove("hidden");
+    modalSmartResult.innerHTML = `<strong>${message}</strong>`;
   }
 
-  const portDept = countDept(port, dept);
-  const stbdDept = countDept(stbd, dept);
-
-  if (portDept < stbdDept) {
-    portScore += smartSettings.departmentWeight;
-    portReasons.push(`PORT currently has fewer ${dept} personnel.`);
-  } else if (stbdDept < portDept) {
-    stbdScore += smartSettings.departmentWeight;
-    stbdReasons.push(`STBD currently has fewer ${dept} personnel.`);
-  } else {
-    neutralReasons.push(`${dept} staffing is currently even.`);
-  }
-
-  quals.forEach(qual => {
-    const portQual = countQual(port, qual);
-    const stbdQual = countQual(stbd, qual);
-
-    const criticalWeight = smartSettings.criticalQualWeights[qual] || smartSettings.qualificationWeight;
-
-    if (portQual < stbdQual) {
-      portScore += criticalWeight;
-      portReasons.push(`PORT currently has fewer ${qual}-qualified members.`);
-    } else if (stbdQual < portQual) {
-      stbdScore += criticalWeight;
-      stbdReasons.push(`STBD currently has fewer ${qual}-qualified members.`);
+  setTimeout(() => {
+    if (focusId && document.getElementById(focusId)) {
+      document.getElementById(focusId).focus();
     }
+  }, 100);
+}
+
+function clearMemberError() {
+  if (modalSmartResult) {
+    modalSmartResult.classList.add("hidden");
+    modalSmartResult.innerHTML = "";
+  }
+}
+
+function clearModal() {
+  editingIndex = null;
+  clearMemberError();
+
+  if (modalTitle) modalTitle.textContent = "Add Member";
+
+  setValue("memberRank", "");
+  setValue("memberFirstName", "");
+  setValue("memberMiddleInitial", "");
+  setValue("memberLastName", "");
+  setValue("memberTitle", "None");
+  setValue("customTitle", "");
+  setValue("memberDept", "Deck");
+  setValue("memberSection", "PORT");
+  setValue("memberStatus", "Available");
+  setValue("customCollateral", "");
+  setValue("lossDate", "");
+  setValue("lossReason", "None");
+  setValue("memberNotes", "");
+
+  document.querySelectorAll(".checks input").forEach(input => {
+    input.checked = false;
   });
-
-  const recommendation = portScore >= stbdScore ? "PORT" : "STBD";
-
-  const reasons =
-    recommendation === "PORT"
-      ? portReasons
-      : stbdReasons;
-
-  if (reasons.length === 0) {
-    reasons.push(`${recommendation} selected as the default because no major imbalance was detected.`);
-  }
-
-  return {
-    recommendation,
-    portScore,
-    stbdScore,
-    reasons,
-    neutralReasons
-  };
 }
 
-function runModalSmartAssignment() {
-  const dept = document.getElementById("memberDept").value;
-  const quals = getSelectedModalQuals();
+function openMemberModal() {
+  clearModal();
 
-  const result = recommendSectionForNewMember(dept, quals);
+  if (!modal) return;
 
-  document.getElementById("memberSection").value = result.recommendation;
+  modal.classList.remove("hidden");
 
-  const reasonList = smartSettings.showRecommendationReasons !== false
-    ? `
-      <h4>Reason</h4>
-      <ul>
-        ${result.reasons.map(reason => `<li>${reason}</li>`).join("")}
-      </ul>
-    `
-    : "";
+  const modalCard = modal.querySelector(".modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
 
-  modalSmartResult.classList.remove("hidden");
-  modalSmartResult.innerHTML = `
-    <strong>Recommended Assignment: ${result.recommendation}</strong>
-
-    ${reasonList}
-
-    <p class="member-notes">
-      Recommendation is based on the current Smart Assignment mode: ${smartSettings.philosophy}.
-    </p>
-  `;
+  setTimeout(() => {
+    const rankInput = document.getElementById("memberRank");
+    if (rankInput) rankInput.focus();
+  }, 150);
 }
 
-window.saveSmartAssignmentSettings = function() {
-  smartSettings.philosophy = document.getElementById("philosophy").value;
-  smartSettings.futureLossPrediction = document.getElementById("futureLossPrediction").checked;
-  smartSettings.showRecommendationReasons = document.getElementById("showRecommendationReasons").checked;
-
-  if (smartSettings.philosophy === "Custom") {
-    smartSettings.personnelBalance = document.getElementById("personnelBalance").checked;
-    smartSettings.personnelWeight = Number(document.getElementById("personnelWeight").value);
-
-    smartSettings.qualificationBalance = document.getElementById("qualificationBalance").checked;
-    smartSettings.qualificationWeight = Number(document.getElementById("qualificationWeight").value);
-
-    smartSettings.departmentBalance = document.getElementById("departmentBalance").checked;
-    smartSettings.departmentWeight = Number(document.getElementById("departmentWeight").value);
-
-    smartSettings.leadershipBalance = document.getElementById("leadershipBalance").checked;
-    smartSettings.leadershipWeight = Number(document.getElementById("leadershipWeight").value);
-
-    smartSettings.rankBalance = document.getElementById("rankBalance").checked;
-    smartSettings.rankWeight = Number(document.getElementById("rankWeight").value);
-
-    smartSettings.breakInMentorPriority = document.getElementById("breakInMentorPriority").checked;
-    smartSettings.breakInWeight = Number(document.getElementById("breakInWeight").value);
-
-    Object.keys(smartSettings.criticalQualWeights).forEach(qual => {
-      smartSettings.criticalQualWeights[qual] = Number(document.getElementById(`qualWeight_${qual}`).value);
-    });
-  }
-
-  saveSmartSettings();
-  alert("Smart Assignment settings saved.");
-};
-
-window.applyPhilosophyPreset = function() {
-  const philosophy = document.getElementById("philosophy").value;
-
-  if (philosophy === "Balanced") {
-    smartSettings.personnelWeight = 5;
-    smartSettings.qualificationWeight = 8;
-    smartSettings.departmentWeight = 8;
-    smartSettings.leadershipWeight = 5;
-    smartSettings.rankWeight = 5;
-    smartSettings.breakInWeight = 7;
-  }
-
-  if (philosophy === "Readiness Focused") {
-    smartSettings.personnelWeight = 3;
-    smartSettings.qualificationWeight = 10;
-    smartSettings.departmentWeight = 7;
-    smartSettings.leadershipWeight = 4;
-    smartSettings.rankWeight = 4;
-    smartSettings.breakInWeight = 3;
-  }
-
-  if (philosophy === "Training Focused") {
-    smartSettings.personnelWeight = 4;
-    smartSettings.qualificationWeight = 5;
-    smartSettings.departmentWeight = 5;
-    smartSettings.leadershipWeight = 3;
-    smartSettings.rankWeight = 4;
-    smartSettings.breakInWeight = 10;
-  }
-
-  if (philosophy === "Leadership Focused") {
-    smartSettings.personnelWeight = 4;
-    smartSettings.qualificationWeight = 6;
-    smartSettings.departmentWeight = 5;
-    smartSettings.leadershipWeight = 10;
-    smartSettings.rankWeight = 8;
-    smartSettings.breakInWeight = 4;
-  }
-
-  smartSettings.philosophy = philosophy;
-  saveSmartSettings();
-  renderSmartAssignmentSettings();
-};
-
-function renderSmartAssignmentSettings() {
-  pageTitle.textContent = "Smart Assignment Settings";
-  pageSubtitle.textContent = "Choose how Watch Keeper recommends PORT and STBD assignments";
-
-  const isCustom = smartSettings.philosophy === "Custom";
-
-  content.innerHTML = `
-    <section class="dashboard-grid">
-      <div class="panel">
-        <h3>Assignment Mode</h3>
-
-        <label>Smart Assignment Mode</label>
-        <select id="philosophy" onchange="previewSmartMode()">
-          <option ${smartSettings.philosophy === "Balanced" ? "selected" : ""}>Balanced</option>
-          <option ${smartSettings.philosophy === "Readiness Focused" ? "selected" : ""}>Readiness Focused</option>
-          <option ${smartSettings.philosophy === "Training Focused" ? "selected" : ""}>Training Focused</option>
-          <option ${smartSettings.philosophy === "Leadership Focused" ? "selected" : ""}>Leadership Focused</option>
-          <option ${smartSettings.philosophy === "Custom" ? "selected" : ""}>Custom</option>
-        </select>
-
-        <div id="modeDescription" class="smart-result">
-          ${getSmartModeDescription(smartSettings.philosophy)}
-        </div>
-
-        <button class="primary-btn settings-btn" onclick="applyPhilosophyPreset()">
-          Apply Mode
-        </button>
-      </div>
-
-      <div class="panel">
-        <h3>Recommendation Display</h3>
-
-        <label class="setting-check">
-          <input type="checkbox" id="showRecommendationReasons" ${smartSettings.showRecommendationReasons !== false ? "checked" : ""}>
-          Show plain-English recommendation reasons
-        </label>
-
-        <label class="setting-check">
-          <input type="checkbox" id="futureLossPrediction" ${smartSettings.futureLossPrediction ? "checked" : ""}>
-          Enable future loss prediction
-        </label>
-
-        <p class="member-notes">
-          Watch Keeper will explain recommendations in plain English instead of showing math or scores.
-        </p>
-      </div>
-
-      ${
-        isCustom
-          ? `
-            <div class="panel">
-              <h3>Custom Balance Weights</h3>
-
-              ${renderSmartSettingToggle("personnelBalance", "personnelWeight", "Personnel Balance")}
-              ${renderSmartSettingToggle("qualificationBalance", "qualificationWeight", "Qualification Balance")}
-              ${renderSmartSettingToggle("departmentBalance", "departmentWeight", "Department Balance")}
-              ${renderSmartSettingToggle("leadershipBalance", "leadershipWeight", "Leadership Balance")}
-              ${renderSmartSettingToggle("rankBalance", "rankWeight", "Rank Balance")}
-              ${renderSmartSettingToggle("breakInMentorPriority", "breakInWeight", "Break-In Mentor Priority")}
-            </div>
-
-            <div class="panel">
-              <h3>Custom Critical Qualification Priority</h3>
-
-              ${Object.keys(smartSettings.criticalQualWeights).map(qual => `
-                <label>${qual} Weight</label>
-                <input type="number" min="0" max="10" id="qualWeight_${qual}" value="${smartSettings.criticalQualWeights[qual]}">
-              `).join("")}
-            </div>
-          `
-          : `
-            <div class="panel wide">
-              <h3>Current Mode Summary</h3>
-              <p>${getSmartModeDescription(smartSettings.philosophy)}</p>
-              <p class="member-notes">
-                Advanced weights are hidden unless Assignment Mode is set to Custom.
-              </p>
-            </div>
-          `
-      }
-
-      <div class="panel wide">
-        <button class="primary-btn settings-btn" onclick="saveSmartAssignmentSettings()">
-          Save Smart Assignment Settings
-        </button>
-      </div>
-    </section>
-  `;
+function closeMemberModal() {
+  if (modal) modal.classList.add("hidden");
+  clearMemberError();
 }
 
-function getSmartModeDescription(mode) {
-  if (mode === "Balanced") {
-    return "Balanced mode keeps PORT and STBD generally even across personnel, departments, and qualifications.";
-  }
+function clearAssetModal() {
+  editingAssetIndex = null;
 
-  if (mode === "Readiness Focused") {
-    return "Readiness Focused mode prioritizes operational qualifications like PCX, PG, OOD, ENG, BO, and BTM.";
-  }
+  if (assetModalTitle) assetModalTitle.textContent = "Add Asset";
 
-  if (mode === "Training Focused") {
-    return "Training Focused mode places break-ins where stronger qualified mentors exist.";
-  }
+  setValue("assetName", "");
+  setValue("assetType", "45 RB-M");
+  setValue("assetPursuit", "Yes");
+  setValue("assetCrewSize", "4");
+  setValue("assetMissionProfile", "SAR");
+  setValue("assetStatus", "FMC");
+  setValue("assetPmcDescription", "");
+  setValue("assetNotes", "");
 
-  if (mode === "Leadership Focused") {
-    return "Leadership Focused mode tries to evenly distribute station leadership, senior members, and section leaders.";
-  }
-
-  if (mode === "Custom") {
-    return "Custom mode allows advanced users to manually adjust the Smart Assignment scoring weights.";
-  }
-
-  return "";
+  hideElement("pmcBox");
 }
 
-window.previewSmartMode = function() {
-  const mode = document.getElementById("philosophy").value;
-  document.getElementById("modeDescription").textContent = getSmartModeDescription(mode);
-};
+function openAssetModal() {
+  clearAssetModal();
 
-function renderSmartSettingToggle(toggleKey, weightKey, label) {
-  return `
-    <div class="smart-setting-row">
-      <label class="setting-check">
-        <input type="checkbox" id="${toggleKey}" ${smartSettings[toggleKey] ? "checked" : ""}>
-        ${label}
-      </label>
+  if (!assetModal) return;
 
-      <input type="number" min="0" max="10" id="${weightKey}" value="${smartSettings[weightKey]}">
-    </div>
-  `;
+  assetModal.classList.remove("hidden");
+
+  const modalCard = assetModal.querySelector(".modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+
+  setTimeout(() => {
+    const nameInput = document.getElementById("assetName");
+    if (nameInput) {
+      nameInput.disabled = false;
+      nameInput.readOnly = false;
+      nameInput.focus();
+    }
+  }, 150);
+}
+
+function closeAssetModal() {
+  if (assetModal) assetModal.classList.add("hidden");
+}
+
+// ---------- Topbar ----------
+function updateTopbarButton(page) {
+  if (!topbarButton) return;
+
+  if (page === "dashboard" || page === "crew") {
+    topbarButton.style.display = "block";
+    topbarButton.textContent = "+ Add Member";
+    topbarButton.onclick = openMemberModal;
+  } else if (page === "assets") {
+    topbarButton.style.display = "block";
+    topbarButton.textContent = "+ Add Asset";
+    topbarButton.onclick = openAssetModal;
+  } else {
+    topbarButton.style.display = "none";
+    topbarButton.onclick = null;
+  }
+}
+
+// ---------- Rotation ----------
+function getCurrentDutySection() {
+  return getDutySectionForDate(new Date().toISOString().slice(0, 10));
+}
+
+function changeDashboardDutyDate(days) {
+  const currentDate = new Date(dashboardDutyDate);
+  currentDate.setDate(currentDate.getDate() + days);
+  dashboardDutyDate = currentDate.toISOString().slice(0, 10);
+  renderDashboard();
+}
+
+function resetDashboardDutyDate() {
+  dashboardDutyDate = new Date().toISOString().slice(0, 10);
+  renderDashboard();
+}
+
+function getDisplayedPlannedCrews() {
+  return plannedCrews.filter(plan => plan.dutyDate === dashboardDutyDate);
+}
+
+function getPlannedCrewsForDate(dateString) {
+  return plannedCrews.filter(plan => plan.dutyDate === dateString);
+}
+
+function getDutySectionForDate(dateString) {
+  if (dutyOverrides[dateString]) {
+    return dutyOverrides[dateString];
+  }
+
+  const startDate = new Date(rotationSettings.dutyStartDate);
+  const targetDate = new Date(dateString);
+
+  startDate.setHours(0,0,0,0);
+  targetDate.setHours(0,0,0,0);
+
+  const daysPassed = Math.floor(
+    (targetDate - startDate) / (1000 * 60 * 60 * 24)
+  );
+
+  const cycleDay = ((daysPassed % 4) + 4) % 4;
+
+  if (cycleDay === 0 || cycleDay === 1) {
+    return rotationSettings.currentSection;
+  }
+
+  return rotationSettings.currentSection === "PORT"
+    ? "STBD"
+    : "PORT";
+}
+
+// ---------- Dashboard ----------
+function getDashboardQuals(member) {
+  const quals = [];
+
+  if (member.quals?.includes("OOD")) quals.push("OOD");
+
+  if (member.quals?.includes("PCX")) {
+    quals.push("PCX");
+  } else if (member.quals?.includes("CX")) {
+    quals.push("CX");
+  }
+
+  if (member.quals?.includes("ENG")) quals.push("ENG");
+  if (member.quals?.includes("BO")) quals.push("BO");
+  if (member.quals?.includes("PG")) quals.push("PG");
+
+  return quals.join(" | ");
+}
+
+function getDashboardDisplay(member) {
+  const rank = member.rank || "";
+  const lastName = member.lastName || "";
+  const pieces = [`${rank} ${lastName}`.trim()];
+
+  if (member.title) pieces.push(member.title);
+
+  if (member.qualificationStatus) {
+    pieces.push(member.qualificationStatus);
+  }
+
+  const quals = getDashboardQuals(member);
+  if (quals) pieces.push(quals);
+
+  return pieces.join(" - ");
 }
 
 function getUpcomingLosses() {
@@ -566,95 +477,177 @@ function getUpcomingLosses() {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
-function getDashboardQuals(member) {
-  const quals = [];
-
-  if (member.quals?.includes("OOD")) {
-    quals.push("OOD");
-  }
-
-  if (member.quals?.includes("PCX")) {
-    quals.push("PCX");
-  } else if (member.quals?.includes("CX")) {
-    quals.push("CX");
-  }
-
-  if (member.quals?.includes("ENG")) {
-    quals.push("ENG");
-  }
-
-  if (member.quals?.includes("BO")) {
-    quals.push("BO");
-  }
-
-  if (member.quals?.includes("PG")) {
-    quals.push("PG");
-  }
-
-  return quals.join(" | ");
-}
-
-function getDashboardDisplay(member) {
-  const rank = member.rank || "";
-  const lastName = member.lastName || "";
-
-  const pieces = [`${rank} ${lastName}`];
-
-  if (member.title) {
-    pieces.push(member.title);
-  }
-
-  const importantQuals = getDashboardQuals(member);
-
-  if (importantQuals) {
-    pieces.push(importantQuals);
-  }
-
-  return pieces.join(" - ");
-}
-
-updateTopbarButton("dashboard");
-
 function renderDashboard() {
+  const currentDutySection = getCurrentDutySection();
+
   const portCrew = getGroup("PORT");
   const stbdCrew = getGroup("STBD");
-  const dayWorkers = getGroup("Day Worker");
-  const reservists = getGroup("Reservist");
-  const tdyToStation = getGroup("TDY to Station");
   const upcomingLosses = getUpcomingLosses();
+  const displayedPlannedCrews = getDisplayedPlannedCrews();
+  const workSummary = getWorkSummary();
+  const topWorkItems = getTopOpenWorkItems();
 
   pageTitle.textContent = "Dashboard";
-  pageSubtitle.textContent = "Station readiness overview";
+  pageSubtitle.textContent = "Current duty section overview";
 
   content.innerHTML = `
-    <section class="cards">
-      <div class="card">
-        <p>Total Personnel</p>
-        <h3>${crew.length}</h3>
+    <section class="dashboard-grid">
+      <div class="panel wide">
+        <h2>Duty Section: ${currentDutySection}</h2>
+        <p>Displayed Duty Date: ${dashboardDutyDate}</p>
+        <p>Rotation Pattern: ${rotationSettings.pattern}</p>
+
+        <div class="dashboard-date-actions">
+          <button class="secondary-btn" onclick="changeDashboardDutyDate(-1)">Previous Day</button>
+          <button class="primary-btn" onclick="resetDashboardDutyDate()">Today</button>
+          <button class="secondary-btn" onclick="changeDashboardDutyDate(1)">Next Day</button>
+        </div>
+
+        <div class="dashboard-date-actions">
+          <button class="secondary-btn" onclick="toggleDutyOverrideForDisplayedDate()">
+            Swap Duty Section for ${dashboardDutyDate}
+          </button>
+
+          ${
+            dutyOverrides[dashboardDutyDate]
+              ? `
+                <button class="secondary-btn" onclick="clearDutyOverrideForDisplayedDate()">
+                  Clear Duty Override
+                </button>
+
+                <p class="member-notes">
+                  Override active for this date.
+                </p>
+              `
+              : ""
+          }
+        </div>
       </div>
 
       <div class="card port-card">
-        <p>PORT</p>
+        <p>PORT Personnel</p>
         <h3>${portCrew.length}</h3>
       </div>
 
       <div class="card stbd-card">
-        <p>STBD</p>
+        <p>STBD Personnel</p>
         <h3>${stbdCrew.length}</h3>
       </div>
 
-      <div class="card">
-        <p>Day Workers</p>
-        <h3>${dayWorkers.length}</h3>
-      </div>
-    </section>
+      <div class="duty-sections-row">
 
-    <section class="dashboard-grid">
-      ${renderMiniGroupPanel("PORT Section", portCrew, "port-panel")}
-      ${renderMiniGroupPanel("STBD Section", stbdCrew, "stbd-panel")}
-      ${renderMiniGroupPanel("Day Workers", dayWorkers, "")}
-      ${renderMiniGroupPanel("Reservists", reservists, "")}
-      ${renderMiniGroupPanel("TDY to Station", tdyToStation, "")}
+        ${["PORT", "STBD"].map(sectionName => {
+          const members = getGroup(sectionName);
+          const isOnDuty = sectionName === currentDutySection;
+
+          return `
+            <div class="panel ${sectionName === "PORT" ? "port-panel" : "stbd-panel"} ${isOnDuty ? "on-duty-panel" : ""}">
+              ${isOnDuty ? `<div class="on-duty-label">ON DUTY</div>` : ""}
+
+              <h3>${sectionName} Section Members</h3>
+
+              <ul>
+                ${
+                  members.length === 0
+                    ? `<li class="dashboard-member">No personnel assigned.</li>`
+                    : members.map(member => `
+                        <li class="dashboard-member">
+                          ${getDashboardDisplay(member)}
+                        </li>
+                      `).join("")
+                }
+              </ul>
+            </div>
+          `;
+        }).join("")}
+
+      </div>
+
+      <div class="panel wide">
+        <h3>Planned Crews for ${dashboardDutyDate}</h3>
+
+        ${
+          displayedPlannedCrews.length === 0
+            ? `<p class="empty-text">No planned crews saved for this duty date.</p>`
+            : ["Standby SAR Crew", "Patrol Crew", "Training Crew", "Mission Crew"].map(type => {
+                const crewsOfType = displayedPlannedCrews.filter(plan =>
+                  plan.missionType === type
+                );
+
+                return `
+                  <div class="member-card">
+                    <h4>${type}</h4>
+
+                    ${
+                      crewsOfType.length === 0
+                        ? `<p class="empty-text">No ${type.toLowerCase()} planned.</p>`
+                        : crewsOfType.map(plan => `
+                            <div class="scenario-summary">
+                              <h4>${plan.asset.name}</h4>
+
+                              <p>${plan.asset.type} | ${plan.asset.status}</p>
+
+                              <ul>
+                                ${plan.crew.map(item => `
+                                  <li>
+                                    <strong>${item.role}:</strong>
+                                    ${getFullDisplayName(item.member)}
+                                  </li>
+                                `).join("")}
+                              </ul>
+
+                              ${plan.notes ? `<p class="member-notes">${plan.notes}</p>` : ""}
+
+                              <button class="action-btn delete-btn" onclick="deletePlannedCrew(${plan.id})">
+                                Delete Planned Crew
+                              </button>
+                            </div>
+                          `).join("")
+                    }
+                  </div>
+                `;
+              }).join("")
+        }
+      </div>
+
+      <div class="panel wide">
+        <h3>Work List Summary</h3>
+
+        <div class="cards">
+          <div class="card">
+            <p>Open</p>
+            <h3>${workSummary.open}</h3>
+          </div>
+
+          <div class="card ready">
+            <p>Completed</p>
+            <h3>${workSummary.completed}</h3>
+          </div>
+
+          <div class="card not-ready-panel">
+            <p>Overdue</p>
+            <h3>${workSummary.overdue}</h3>
+          </div>
+        </div>
+
+        <h4>Top Open Work Items</h4>
+
+        ${
+          topWorkItems.length === 0
+            ? `<p class="empty-text">No open work items.</p>`
+            : `
+              <ul>
+                ${topWorkItems.map(item => `
+                  <li>
+                    <strong>${item.title}</strong>
+                    - ${item.category}
+                    ${item.dueDate ? ` | Due: ${item.dueDate}` : ""}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+        }
+      </div>
 
       <div class="panel wide">
         <h3>Future Loss Warnings</h3>
@@ -667,13 +660,10 @@ function renderDashboard() {
                 ${upcomingLosses.map(item => `
                   <li>
                     ${getFullDisplayName(item.member)}
-                    -
-                    ${item.member.lossReason}
+                    - ${item.member.lossReason}
                     in ${item.daysUntil} days
                     (${item.member.lossDate})
-
                     <br>
-
                     <span class="member-notes">
                       Impact: Loss of ${(item.member.quals || []).join(", ") || "no listed qualifications"}
                       from ${item.member.section}.
@@ -688,30 +678,226 @@ function renderDashboard() {
   `;
 }
 
-function renderMiniGroupPanel(title, members, extraClass) {
-  return `
-    <div class="panel ${extraClass}">
-      <h3>${title}</h3>
-      <ul>
+function renderCalendar() {
+
+  pageTitle.textContent = "Duty Calendar";
+  pageSubtitle.textContent = "Monthly duty schedule";
+
+  const firstDay = new Date(calendarYear, calendarMonth, 1);
+  const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+
+  const startWeekday = firstDay.getDay();
+  const daysInMonth = lastDay.getDate();
+
+  const monthName = firstDay.toLocaleString("default", {
+    month: "long"
+  });
+
+  let cells = "";
+
+  for (let i = 0; i < startWeekday; i++) {
+    cells += `<div class="calendar-cell empty"></div>`;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+
+    const date = new Date(calendarYear, calendarMonth, day);
+
+    const dateString =
+      date.getFullYear() +
+      "-" +
+      String(date.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(date.getDate()).padStart(2, "0");
+
+    const section = getDutySectionForDate(dateString);
+    const hasOverride = !!dutyOverrides[dateString];
+    const plannedForDay = getPlannedCrewsForDate(dateString);
+
+    cells += `
+      <div
+        class="calendar-cell ${section === "PORT" ? "port-day" : "stbd-day"} ${hasOverride ? "override-day" : ""}"
+        onclick="selectCalendarDate('${dateString}')"
+      >
+        <strong>${day}</strong>
+
+        <div class="calendar-duty">
+          ${section}
+        </div>
+
         ${
-          members.length === 0
-            ? `<li>No personnel assigned.</li>`
-            : members.map(member => `
-  <li class="dashboard-member">
-    ${getDashboardDisplay(member)}
-  </li>
-`).join("")
+          hasOverride
+            ? `<div class="calendar-override">OVERRIDE</div>`
+            : ""
         }
-      </ul>
+
+        <div class="calendar-crews">
+
+          ${
+            plannedForDay.length === 0
+              ? `<span>No Crews</span>`
+              : plannedForDay
+                  .slice(0, 2)
+                  .map(plan => `
+                    <div class="calendar-crew-tag">
+                      ${plan.missionType.replace(" Crew","")}
+                    </div>
+                  `)
+                  .join("")
+          }
+
+          ${
+            plannedForDay.length > 2
+              ? `<div class="calendar-more">
+                  +${plannedForDay.length - 2} more
+                </div>`
+              : ""
+          }
+
+        </div>
+      </div>
+    `;
+  }
+
+  content.innerHTML = `
+    <div class="panel">
+
+      <div class="calendar-header">
+
+        <button
+          class="secondary-btn"
+          onclick="changeCalendarMonth(-1)"
+        >
+          Previous
+        </button>
+
+        <h3>
+          ${monthName} ${calendarYear}
+        </h3>
+
+        <button
+          class="secondary-btn"
+          onclick="changeCalendarMonth(1)"
+        >
+          Next
+        </button>
+
+      </div>
+
+      <div class="calendar-grid">
+
+        <div class="calendar-weekday">Sun</div>
+        <div class="calendar-weekday">Mon</div>
+        <div class="calendar-weekday">Tue</div>
+        <div class="calendar-weekday">Wed</div>
+        <div class="calendar-weekday">Thu</div>
+        <div class="calendar-weekday">Fri</div>
+        <div class="calendar-weekday">Sat</div>
+
+        ${cells}
+
+      </div>
+
     </div>
   `;
 }
 
-updateTopbarButton("crew roster");
+window.toggleDutyOverrideForDisplayedDate = function() {
+  const currentSection = getDutySectionForDate(dashboardDutyDate);
+  const newSection = currentSection === "PORT" ? "STBD" : "PORT";
+
+  dutyOverrides[dashboardDutyDate] = newSection;
+  saveDutyOverrides();
+
+  dashboardSectionView = newSection;
+  renderDashboard();
+};
+
+window.clearDutyOverrideForDisplayedDate = function() {
+  delete dutyOverrides[dashboardDutyDate];
+  saveDutyOverrides();
+
+  dashboardSectionView = getDutySectionForDate(dashboardDutyDate);
+  renderDashboard();
+};
+
+window.changeCalendarMonth = function(direction) {
+
+  calendarMonth += direction;
+
+  if (calendarMonth < 0) {
+    calendarMonth = 11;
+    calendarYear--;
+  }
+
+  if (calendarMonth > 11) {
+    calendarMonth = 0;
+    calendarYear++;
+  }
+
+  renderCalendar();
+};
+
+window.selectCalendarDate = function(dateString) {
+
+  dashboardDutyDate = dateString;
+
+  document
+    .querySelector('[data-page="dashboard"]')
+    ?.click();
+};
+
+window.toggleDashboardDutySection = function() {
+  dashboardSectionView = dashboardSectionView === "PORT" ? "STBD" : "PORT";
+  renderDashboard();
+};
+
+window.deletePlannedCrew = function(id) {
+  plannedCrews = plannedCrews.filter(plan => plan.id !== id);
+  savePlannedCrews();
+  renderDashboard();
+};
+
+// ---------- Crew Roster ----------
+function getSelectedModalQuals() {
+  let quals = [...document.querySelectorAll(".checks input:checked")]
+    .filter(input => trackedQuals.includes(input.value))
+    .map(input => input.value);
+
+  if (quals.includes("PCX")) {
+    quals = quals.filter(q => q !== "CX");
+  }
+
+  return quals;
+}
+
+function getSelectedModalCollaterals() {
+  const selected = [...document.querySelectorAll(".checks input:checked")]
+    .filter(input => !trackedQuals.includes(input.value))
+    .map(input => input.value);
+
+  const customCollateral = safeValue("customCollateral").trim();
+
+  if (selected.includes("Custom") && customCollateral) {
+    return selected.filter(item => item !== "Custom").concat(customCollateral);
+  }
+
+  return selected.filter(item => item !== "Custom");
+}
+
+function getMemberTitle() {
+  const title = safeValue("memberTitle", "None");
+  const customTitle = safeValue("customTitle").trim();
+
+  if (title === "Custom") return customTitle;
+  if (title === "None") return "";
+
+  return title;
+}
 
 function renderCrewRoster() {
   pageTitle.textContent = "Crew Roster";
-  pageSubtitle.textContent = "Personnel grouped alphabetically by last name";
+  pageSubtitle.textContent = "Personnel grouped by section and sorted by rank";
 
   const groups = [
     { title: "PORT Section", value: "PORT", className: "port-panel" },
@@ -746,6 +932,7 @@ function renderCrewRoster() {
                           </div>
 
                           <div class="member-actions">
+                            <button class="action-btn" onclick="viewPersonnelDetails(${index})">Details</button>
                             <button class="action-btn" onclick="editMember(${index})">Edit</button>
                             <button class="action-btn delete-btn" onclick="deleteMember(${index})">Delete</button>
                           </div>
@@ -757,7 +944,15 @@ function renderCrewRoster() {
 
                         ${
                           member.collaterals && member.collaterals.length > 0
-                            ? `<div class="qual-row">${member.collaterals.map(c => `<span class="badge collateral-badge">${c}</span>`).join("")}</div>`
+                            ? `<div class="qual-row">
+                                ${member.collaterals.map(c => `<span class="badge collateral-badge">${c}</span>`).join("")}
+                              </div>`
+                            : ""
+                        }
+
+                        ${
+                          member.lossDate && member.lossReason && member.lossReason !== "None"
+                            ? `<p class="member-notes"><strong>Projected Loss:</strong> ${member.lossReason} on ${member.lossDate}</p>`
                             : ""
                         }
 
@@ -773,6 +968,468 @@ function renderCrewRoster() {
   `;
 }
 
+window.addPersonnelNote = function(index) {
+
+  const member = crew[index];
+  if (!member) return;
+
+  const noteText =
+    document.getElementById("newPersonnelNote").value.trim();
+
+  const noteCategory =
+    document.getElementById("noteCategory").value;
+
+  if (!noteText) return;
+
+  if (!member.notesHistory) {
+    member.notesHistory = [];
+  }
+
+  member.notesHistory.unshift({
+    category: noteCategory,
+    text: noteText,
+    timestamp: new Date().toLocaleString()
+  });
+
+  saveCrew();
+
+  viewPersonnelDetails(index);
+};
+
+window.viewPersonnelDetails = function(index) {
+  const member = crew[index];
+
+  if (!member) return;
+
+  pageTitle.textContent = "Personnel Details";
+  pageSubtitle.textContent = getFullDisplayName(member);
+
+  content.innerHTML = `
+    <section class="dashboard-grid">
+
+      <div class="panel wide">
+        <h3>${getFullDisplayName(member)}</h3>
+
+        <p><strong>Department:</strong> ${member.dept || "Not listed"}</p>
+        <p><strong>Section:</strong> ${member.section || "Not listed"}</p>
+        <p><strong>Status:</strong> ${member.status || "Not listed"}</p>
+        <p><strong>Title:</strong> ${member.title || "None"}</p>
+        <p><strong>EMPLID:</strong> ${member.emplid || "Not listed"}</p>
+        <p><strong>Expected Arrival / Start Date:</strong> ${member.arrivalDate || "Not listed"}</p>
+        <p><strong>Expected Section Swap Date:</strong> ${member.swapDate || "Not listed"}</p>
+      </div>
+
+      <div class="panel">
+        <h3>Qualifications</h3>
+
+        <div class="qual-row">
+          ${
+            member.quals && member.quals.length > 0
+              ? member.quals.map(qual => `<span class="badge">${qual}</span>`).join("")
+              : `<p class="empty-text">No qualifications listed.</p>`
+          }
+        </div>
+
+        <h4>Qualification Due Dates</h4>
+
+        ${
+          ["OOD", "WCH", "PCX", "CX", "ENG", "BTM", "CR"].map(qual => {
+            const dueDate = member.qualDueDates?.[qual];
+            const status = getQualDueStatus(dueDate);
+
+            return `
+              <div class="qual-date-row">
+                <strong>${qual}</strong>
+
+                <span>${dueDate || "No date listed"}</span>
+
+                <span class="qual-status ${status.className}">
+                  ${status.label}
+                </span>
+              </div>
+            `;
+          }).join("")
+        }
+
+        ${
+          member.qualificationStatus
+            ? `
+              <p>
+                <strong>Qualification Status:</strong>
+                <span class="qual-status qual-warning">
+                  ${member.qualificationStatus}
+                </span>
+              </p>
+            `
+            : ""
+        }
+      </div>
+
+      <div class="panel">
+        <h3>Collaterals</h3>
+
+        <div class="qual-row">
+          ${
+            member.collaterals && member.collaterals.length > 0
+              ? member.collaterals.map(item => `<span class="badge collateral-badge">${item}</span>`).join("")
+              : `<p class="empty-text">No collaterals listed.</p>`
+          }
+        </div>
+      </div>
+
+      <div class="panel wide">
+
+        <h3>Personnel Notes</h3>
+
+        <p>${member.notes || "No notes entered."}</p>
+
+        <hr>
+
+        <label>Note Category</label>
+
+        <select id="noteCategory">
+          <option>Admin</option>
+          <option>Training</option>
+          <option>Qualification</option>
+          <option>Discipline</option>
+          <option>General</option>
+        </select>
+
+        <label>New Note</label>
+
+        <textarea
+          id="newPersonnelNote"
+          placeholder="Enter note..."
+        ></textarea>
+
+        <button
+          class="primary-btn"
+          onclick="addPersonnelNote(${index})"
+        >
+          Add Note
+        </button>
+
+      </div>
+
+      <div class="panel wide">
+
+        <h3>History Log</h3>
+
+        ${
+          member.notesHistory &&
+          member.notesHistory.length > 0
+
+            ? member.notesHistory.map(note => `
+                <div class="member-card">
+
+                  <p>
+                    <strong>${note.category}</strong>
+                  </p>
+
+                  <p>${note.text}</p>
+
+                  <p class="member-notes">
+                    ${note.timestamp}
+                  </p>
+
+                </div>
+              `).join("")
+
+            : `<p>No history entries.</p>`
+        }
+
+      </div>
+
+      <div class="panel wide">
+        <h3>Projected Personnel Movement</h3>
+
+        <p><strong>Projected Loss Reason:</strong> ${member.lossReason || "None"}</p>
+        <p><strong>Projected Loss Date:</strong> ${member.lossDate || "Not listed"}</p>
+      </div>
+
+      <div class="panel wide">
+        <button class="primary-btn" onclick="editMember(${index})">
+          Edit Personnel
+        </button>
+
+        <button class="secondary-btn" onclick="renderCrewRoster()">
+          Back to Crew Roster
+        </button>
+      </div>
+
+    </section>
+  `;
+};
+
+window.editMember = function(index) {
+  editingIndex = index;
+  const member = crew[index];
+
+  clearModal();
+
+  editingIndex = index;
+  modalTitle.textContent = "Edit Member";
+
+  setValue("memberRank", member.rank || "");
+  setValue("memberFirstName", member.firstName || "");
+  setValue("memberMiddleInitial", member.middleInitial || "");
+  setValue("memberLastName", member.lastName || "");
+  setValue("memberTitle", member.title || "None");
+  setValue("customTitle", "");
+  setValue("memberDept", member.dept || "Deck");
+  setValue("memberSection", member.section || "PORT");
+  setValue("memberStatus", member.status || "Available");
+  setValue("lossDate", member.lossDate || "");
+  setValue("lossReason", member.lossReason || "None");
+  setValue("memberEmplid", member.emplid || "");
+  setValue("memberArrivalDate", member.arrivalDate || "");
+  setValue("memberSwapDate", member.swapDate || "");
+  setValue("memberNotes", member.notes || "");
+
+  document.querySelectorAll(".checks input").forEach(input => {
+    input.checked = false;
+  });
+
+  (member.quals || []).forEach(qual => {
+    const box = [...document.querySelectorAll(".checks input")].find(input => input.value === qual);
+    if (box) box.checked = true;
+  });
+
+  (member.collaterals || []).forEach(collateral => {
+    const box = [...document.querySelectorAll(".checks input")].find(input => input.value === collateral);
+    if (box) {
+      box.checked = true;
+    } else {
+      const customBox = [...document.querySelectorAll(".checks input")].find(input => input.value === "Custom");
+      if (customBox) customBox.checked = true;
+      setValue("customCollateral", collateral);
+    }
+  });
+
+  modal.classList.remove("hidden");
+
+  const modalCard = modal.querySelector(".modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+
+  setTimeout(() => {
+    const rankInput = document.getElementById("memberRank");
+    if (rankInput) rankInput.focus();
+  }, 150);
+};
+
+window.deleteMember = function(index) {
+  crew.splice(index, 1);
+  saveCrew();
+  renderCrewRoster();
+};
+
+// ---------- Worklist ----------
+
+function renderWorkList() {
+  pageTitle.textContent = "Work List";
+  pageSubtitle.textContent = "Maintenance, repairs, cleanups, and station task tracking";
+
+  content.innerHTML = `
+    <section class="dashboard-grid">
+
+      <div class="panel wide">
+        <h3>Add Work Item</h3>
+
+        <label>Task</label>
+        <input id="workTitle" placeholder="Example: Replace 45631 nav light">
+
+        <label>Category</label>
+        <select id="workCategory">
+          <option>Engineering - Maintenance</option>
+          <option>Engineering - Repairs</option>
+          <option>Deck - Maintenance</option>
+          <option>Deck - Repairs</option>
+          <option>Facilities - Maintenance</option>
+          <option>Facilities - Repairs</option>
+          <option>Lawn Maintenance</option>
+          <option>Cleanups</option>
+          <option>Requested To-Do List</option>
+          <option>Miscellaneous</option>
+        </select>
+
+        <label>Assigned To</label>
+        <input id="workAssigned" placeholder="Optional">
+
+        <label>Due Date</label>
+        <input id="workDueDate" type="date">
+
+        <label>Notes</label>
+        <textarea id="workNotes" placeholder="Optional details..."></textarea>
+
+        <button class="primary-btn" onclick="addWorkItem()">
+          Add Work Item
+        </button>
+      </div>
+
+      ${renderWorkSection("Engineering", ["Engineering - Maintenance", "Engineering - Repairs"])}
+      ${renderWorkSection("Deck", ["Deck - Maintenance", "Deck - Repairs"])}
+      ${renderWorkSection("Facilities", ["Facilities - Maintenance", "Facilities - Repairs"])}
+
+      ${renderSingleWorkCategory("Lawn Maintenance")}
+      ${renderSingleWorkCategory("Cleanups")}
+      ${renderSingleWorkCategory("Requested To-Do List")}
+      ${renderSingleWorkCategory("Miscellaneous")}
+
+      <div class="panel wide">
+        <button class="delete-btn" onclick="deleteSelectedWorkItems()">
+          Delete Selected Tasks
+        </button>
+      </div>
+
+    </section>
+  `;
+}
+
+function getWorkSummary() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const open = workItems.filter(item => !item.completed).length;
+  const completed = workItems.filter(item => item.completed).length;
+
+  const overdue = workItems.filter(item => {
+    if (item.completed || !item.dueDate) return false;
+
+    const due = new Date(item.dueDate);
+    due.setHours(0, 0, 0, 0);
+
+    return due < today;
+  }).length;
+
+  return { open, completed, overdue };
+}
+
+function getTopOpenWorkItems(limit = 5) {
+  return workItems
+    .filter(item => !item.completed)
+    .sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+
+      return new Date(a.dueDate) - new Date(b.dueDate);
+    })
+    .slice(0, limit);
+}
+
+function renderWorkSection(title, categories) {
+  return `
+    <div class="panel wide">
+      <h3>${title}</h3>
+
+      ${categories.map(category => `
+        <div class="member-card">
+          <h4>${category.replace(`${title} - `, "")}</h4>
+          ${renderWorkItemsForCategory(category)}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderSingleWorkCategory(category) {
+  return `
+    <div class="panel wide">
+      <h3>${category}</h3>
+      ${renderWorkItemsForCategory(category)}
+    </div>
+  `;
+}
+
+function renderWorkItemsForCategory(category) {
+  const items = workItems.filter(item => item.category === category);
+
+  if (items.length === 0) {
+    return `<p class="empty-text">No tasks.</p>`;
+  }
+
+  return items.map(item => `
+    <div class="work-item ${item.completed ? "work-completed" : ""}">
+      
+      <div class="work-task-line">
+        <label class="work-task-left">
+          <input
+            type="checkbox"
+            ${item.completed ? "checked" : ""}
+            onchange="toggleWorkComplete(${item.id})"
+          >
+
+          <span>
+            <strong>${item.title}</strong>
+            ${item.completed ? `<span class="qual-status qual-current">DONE</span>` : ""}
+          </span>
+        </label>
+
+        <label class="work-delete-right">
+          <input
+            type="checkbox"
+            class="work-delete-check"
+            value="${item.id}"
+          >
+          <span>Delete</span>
+        </label>
+      </div>
+
+      <p class="member-notes work-meta">
+        Assigned: ${item.assigned || "Unassigned"}
+        ${item.dueDate ? ` | Due: ${item.dueDate}` : ""}
+      </p>
+
+      ${item.notes ? `<p class="work-notes">${item.notes}</p>` : ""}
+    </div>
+  `).join("");
+}
+
+window.addWorkItem = function() {
+  const title = document.getElementById("workTitle").value.trim();
+
+  if (!title) {
+    document.getElementById("workTitle").focus();
+    return;
+  }
+
+  workItems.push({
+    id: Date.now(),
+    title,
+    category: document.getElementById("workCategory").value,
+    assigned: document.getElementById("workAssigned").value.trim(),
+    dueDate: document.getElementById("workDueDate").value,
+    notes: document.getElementById("workNotes").value.trim(),
+    completed: false,
+    createdAt: new Date().toISOString()
+  });
+
+  saveWorkItems();
+  renderWorkList();
+};
+
+window.toggleWorkComplete = function(id) {
+  const item = workItems.find(item => item.id === id);
+
+  if (!item) return;
+
+  item.completed = !item.completed;
+  saveWorkItems();
+  renderWorkList();
+};
+
+window.deleteSelectedWorkItems = function() {
+  const selectedIds = [...document.querySelectorAll(".work-delete-check:checked")]
+    .map(input => Number(input.value));
+
+  if (selectedIds.length === 0) return;
+
+  workItems = workItems.filter(item => !selectedIds.includes(item.id));
+  saveWorkItems();
+  renderWorkList();
+};
+
+// ---------- Duty Sections ----------
 function renderDutySections() {
   const portCrew = getGroup("PORT");
   const stbdCrew = getGroup("STBD");
@@ -829,7 +1486,7 @@ function renderSectionAnalysisPanel(title, members, extraClass) {
           <h4>Department Staffing</h4>
           <ul>
             <li>Deck: ${countDept(members, "Deck")}</li>
-            <li>Engineers: ${countDept(members, "Engineering")}</li>
+            <li>Engineering: ${countDept(members, "Engineering")}</li>
             <li>LE Qualified: ${countLEQualified(members)}</li>
           </ul>
         </div>
@@ -861,15 +1518,26 @@ function generateSectionRecommendations(portCrew, stbdCrew) {
     if (stbdCount === 0 && portCount > 0) notes.push(`STBD has no ${qual}-qualified members.`);
   });
 
-  const portLE = countLEQualified(portCrew);
-  const stbdLE = countLEQualified(stbdCrew);
-
-  if (Math.abs(portLE - stbdLE) >= 2) {
-    const weaker = portLE < stbdLE ? "PORT" : "STBD";
-    notes.push(`LE qualified staffing is uneven. ${weaker} has fewer LE-qualified members.`);
-  }
-
   return notes;
+}
+
+// ---------- Readiness ----------
+function checkReadiness(sectionName) {
+  const members = getAvailableGroup(sectionName);
+  const missing = [];
+
+  readinessRequirements.forEach(req => {
+    if (countEffectiveQual(members, req) < 1) {
+      missing.push(req);
+    }
+  });
+
+  return {
+    section: sectionName,
+    ready: missing.length === 0,
+    missing,
+    members
+  };
 }
 
 function getDayWorkerStandbyOptions(requiredQual) {
@@ -907,9 +1575,7 @@ function renderReadinessPanel(result) {
   return `
     <div class="panel readiness-panel ${result.ready ? "ready-panel" : "not-ready-panel"}">
       <h3>${result.section} Section</h3>
-
       <h2>${result.ready ? "MISSION CAPABLE" : "NOT MISSION CAPABLE"}</h2>
-
       <p>Available Section Personnel: ${result.members.length}</p>
 
       ${
@@ -963,6 +1629,486 @@ function renderReadinessPanel(result) {
   `;
 }
 
+// ---------- Smart Assignment ----------
+function recommendSectionForNewMember(dept, quals) {
+  const port = getGroup("PORT");
+  const stbd = getGroup("STBD");
+
+  let portScore = 0;
+  let stbdScore = 0;
+
+  const portReasons = [];
+  const stbdReasons = [];
+
+  if (port.length < stbd.length) {
+    portScore += smartSettings.personnelWeight;
+    portReasons.push("PORT currently has fewer total personnel.");
+  } else if (stbd.length < port.length) {
+    stbdScore += smartSettings.personnelWeight;
+    stbdReasons.push("STBD currently has fewer total personnel.");
+  }
+
+  const portDept = countDept(port, dept);
+  const stbdDept = countDept(stbd, dept);
+
+  if (portDept < stbdDept) {
+    portScore += smartSettings.departmentWeight;
+    portReasons.push(`PORT currently has fewer ${dept} personnel.`);
+  } else if (stbdDept < portDept) {
+    stbdScore += smartSettings.departmentWeight;
+    stbdReasons.push(`STBD currently has fewer ${dept} personnel.`);
+  }
+
+  quals.forEach(qual => {
+    const portQual = countQual(port, qual);
+    const stbdQual = countQual(stbd, qual);
+    const weight = smartSettings.criticalQualWeights[qual] || smartSettings.qualificationWeight;
+
+    if (portQual < stbdQual) {
+      portScore += weight;
+      portReasons.push(`PORT currently has fewer ${qual}-qualified members.`);
+    } else if (stbdQual < portQual) {
+      stbdScore += weight;
+      stbdReasons.push(`STBD currently has fewer ${qual}-qualified members.`);
+    }
+  });
+
+  const recommendation = portScore >= stbdScore ? "PORT" : "STBD";
+  const reasons = recommendation === "PORT" ? portReasons : stbdReasons;
+
+  if (reasons.length === 0) {
+    reasons.push(`${recommendation} selected as the default because no major imbalance was detected.`);
+  }
+
+  return {
+    recommendation,
+    portScore,
+    stbdScore,
+    reasons
+  };
+}
+
+function runModalSmartAssignment() {
+  const dept = safeValue("memberDept", "Deck");
+  const quals = getSelectedModalQuals();
+
+  const result = recommendSectionForNewMember(dept, quals);
+
+  setValue("memberSection", result.recommendation);
+
+  modalSmartResult.classList.remove("hidden");
+  modalSmartResult.innerHTML = `
+    <strong>Recommended Assignment: ${result.recommendation}</strong>
+
+    ${
+      smartSettings.showRecommendationReasons !== false
+        ? `
+          <h4>Reason</h4>
+          <ul>
+            ${result.reasons.map(reason => `<li>${reason}</li>`).join("")}
+          </ul>
+        `
+        : ""
+    }
+
+    <p class="member-notes">
+      Recommendation is based on the current Smart Assignment mode: ${smartSettings.philosophy}.
+    </p>
+  `;
+}
+
+function getSmartModeDescription(mode) {
+  if (mode === "Balanced") {
+    return "Balanced mode keeps PORT and STBD generally even across personnel, departments, and qualifications.";
+  }
+
+  if (mode === "Readiness Focused") {
+    return "Readiness Focused mode prioritizes operational qualifications like PCX, PG, OOD, ENG, BO, and BTM.";
+  }
+
+  if (mode === "Training Focused") {
+    return "Training Focused mode places break-ins where stronger qualified mentors exist.";
+  }
+
+  if (mode === "Leadership Focused") {
+    return "Leadership Focused mode tries to evenly distribute station leadership, senior members, and section leaders.";
+  }
+
+  if (mode === "Custom") {
+    return "Custom mode allows advanced users to manually adjust the Smart Assignment scoring weights.";
+  }
+
+  return "";
+}
+
+function renderSmartSettingToggle(toggleKey, weightKey, label) {
+  return `
+    <div class="smart-setting-row">
+      <label class="setting-check">
+        <input type="checkbox" id="${toggleKey}" ${smartSettings[toggleKey] ? "checked" : ""}>
+        ${label}
+      </label>
+
+      <input type="number" min="0" max="10" id="${weightKey}" value="${smartSettings[weightKey]}">
+    </div>
+  `;
+}
+
+function renderSmartAssignmentSettings() {
+  pageTitle.textContent = "Smart Assignment Settings";
+  pageSubtitle.textContent = "Choose how Watch Keeper recommends PORT and STBD assignments";
+
+  const isCustom = smartSettings.philosophy === "Custom";
+
+  content.innerHTML = `
+    <section class="dashboard-grid">
+      <div class="panel">
+        <h3>Assignment Mode</h3>
+
+        <label>Smart Assignment Mode</label>
+        <select id="philosophy" onchange="previewSmartMode()">
+          <option ${smartSettings.philosophy === "Balanced" ? "selected" : ""}>Balanced</option>
+          <option ${smartSettings.philosophy === "Readiness Focused" ? "selected" : ""}>Readiness Focused</option>
+          <option ${smartSettings.philosophy === "Training Focused" ? "selected" : ""}>Training Focused</option>
+          <option ${smartSettings.philosophy === "Leadership Focused" ? "selected" : ""}>Leadership Focused</option>
+          <option ${smartSettings.philosophy === "Custom" ? "selected" : ""}>Custom</option>
+        </select>
+
+        <div id="modeDescription" class="smart-result">
+          ${getSmartModeDescription(smartSettings.philosophy)}
+        </div>
+
+        <button class="primary-btn settings-btn" onclick="applyPhilosophyPreset()">
+          Apply Mode
+        </button>
+      </div>
+
+      <div class="panel">
+        <h3>Recommendation Display</h3>
+
+        <label class="setting-check">
+          <input type="checkbox" id="showRecommendationReasons" ${smartSettings.showRecommendationReasons !== false ? "checked" : ""}>
+          Show plain-English recommendation reasons
+        </label>
+
+        <label class="setting-check">
+          <input type="checkbox" id="futureLossPrediction" ${smartSettings.futureLossPrediction ? "checked" : ""}>
+          Enable future loss prediction
+        </label>
+
+        <p class="member-notes">
+          Watch Keeper will explain recommendations in plain English instead of showing math or scores.
+        </p>
+      </div>
+
+      ${
+        isCustom
+          ? `
+            <div class="panel">
+              <h3>Custom Balance Weights</h3>
+              ${renderSmartSettingToggle("personnelBalance", "personnelWeight", "Personnel Balance")}
+              ${renderSmartSettingToggle("qualificationBalance", "qualificationWeight", "Qualification Balance")}
+              ${renderSmartSettingToggle("departmentBalance", "departmentWeight", "Department Balance")}
+              ${renderSmartSettingToggle("leadershipBalance", "leadershipWeight", "Leadership Balance")}
+              ${renderSmartSettingToggle("rankBalance", "rankWeight", "Rank Balance")}
+              ${renderSmartSettingToggle("breakInMentorPriority", "breakInWeight", "Break-In Mentor Priority")}
+            </div>
+
+            <div class="panel">
+              <h3>Custom Critical Qualification Priority</h3>
+
+              ${Object.keys(smartSettings.criticalQualWeights).map(qual => `
+                <label>${qual} Weight</label>
+                <input type="number" min="0" max="10" id="qualWeight_${qual}" value="${smartSettings.criticalQualWeights[qual]}">
+              `).join("")}
+            </div>
+          `
+          : `
+            <div class="panel wide">
+              <h3>Current Mode Summary</h3>
+              <p>${getSmartModeDescription(smartSettings.philosophy)}</p>
+              <p class="member-notes">
+                Advanced weights are hidden unless Assignment Mode is set to Custom.
+              </p>
+            </div>
+          `
+      }
+
+      <div class="panel wide">
+        <button class="primary-btn settings-btn" onclick="saveSmartAssignmentSettings()">
+          Save Smart Assignment Settings
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+window.previewSmartMode = function() {
+  const mode = safeValue("philosophy", smartSettings.philosophy);
+  const description = document.getElementById("modeDescription");
+  if (description) description.textContent = getSmartModeDescription(mode);
+};
+
+window.applyPhilosophyPreset = function() {
+  const philosophy = safeValue("philosophy", smartSettings.philosophy);
+
+  if (philosophy === "Balanced") {
+    smartSettings.personnelWeight = 5;
+    smartSettings.qualificationWeight = 8;
+    smartSettings.departmentWeight = 8;
+    smartSettings.leadershipWeight = 5;
+    smartSettings.rankWeight = 5;
+    smartSettings.breakInWeight = 7;
+  }
+
+  if (philosophy === "Readiness Focused") {
+    smartSettings.personnelWeight = 3;
+    smartSettings.qualificationWeight = 10;
+    smartSettings.departmentWeight = 7;
+    smartSettings.leadershipWeight = 4;
+    smartSettings.rankWeight = 4;
+    smartSettings.breakInWeight = 3;
+  }
+
+  if (philosophy === "Training Focused") {
+    smartSettings.personnelWeight = 4;
+    smartSettings.qualificationWeight = 5;
+    smartSettings.departmentWeight = 5;
+    smartSettings.leadershipWeight = 3;
+    smartSettings.rankWeight = 4;
+    smartSettings.breakInWeight = 10;
+  }
+
+  if (philosophy === "Leadership Focused") {
+    smartSettings.personnelWeight = 4;
+    smartSettings.qualificationWeight = 6;
+    smartSettings.departmentWeight = 5;
+    smartSettings.leadershipWeight = 10;
+    smartSettings.rankWeight = 8;
+    smartSettings.breakInWeight = 4;
+  }
+
+  smartSettings.philosophy = philosophy;
+  saveSmartSettings();
+  renderSmartAssignmentSettings();
+};
+
+window.saveSmartAssignmentSettings = function() {
+  smartSettings.philosophy = safeValue("philosophy", smartSettings.philosophy);
+  smartSettings.futureLossPrediction = document.getElementById("futureLossPrediction")?.checked || false;
+  smartSettings.showRecommendationReasons = document.getElementById("showRecommendationReasons")?.checked || false;
+
+  if (smartSettings.philosophy === "Custom") {
+    smartSettings.personnelBalance = document.getElementById("personnelBalance")?.checked || false;
+    smartSettings.personnelWeight = Number(safeValue("personnelWeight", smartSettings.personnelWeight));
+
+    smartSettings.qualificationBalance = document.getElementById("qualificationBalance")?.checked || false;
+    smartSettings.qualificationWeight = Number(safeValue("qualificationWeight", smartSettings.qualificationWeight));
+
+    smartSettings.departmentBalance = document.getElementById("departmentBalance")?.checked || false;
+    smartSettings.departmentWeight = Number(safeValue("departmentWeight", smartSettings.departmentWeight));
+
+    smartSettings.leadershipBalance = document.getElementById("leadershipBalance")?.checked || false;
+    smartSettings.leadershipWeight = Number(safeValue("leadershipWeight", smartSettings.leadershipWeight));
+
+    smartSettings.rankBalance = document.getElementById("rankBalance")?.checked || false;
+    smartSettings.rankWeight = Number(safeValue("rankWeight", smartSettings.rankWeight));
+
+    smartSettings.breakInMentorPriority = document.getElementById("breakInMentorPriority")?.checked || false;
+    smartSettings.breakInWeight = Number(safeValue("breakInWeight", smartSettings.breakInWeight));
+
+    Object.keys(smartSettings.criticalQualWeights).forEach(qual => {
+      smartSettings.criticalQualWeights[qual] = Number(safeValue(`qualWeight_${qual}`, smartSettings.criticalQualWeights[qual]));
+    });
+  }
+
+  saveSmartSettings();
+};
+
+// ---------- Assets ----------
+function getAssetStatusBadge(status) {
+  return `<span class="asset-status-badge ${status}">${status}</span>`;
+}
+
+function getAssetSummary() {
+  return {
+    total: assets.length,
+    fmc: assets.filter(asset => asset.status === "FMC").length,
+    pmc: assets.filter(asset => asset.status === "PMC").length,
+    nmc: assets.filter(asset => asset.status === "NMC").length
+  };
+}
+
+function sortAssetsByType(assetList) {
+  const typeOrder = [
+    "45 RB-M",
+    "33 SPC-LE",
+    "29 RBS-II",
+    "24 SPC-SW",
+    "Other"
+  ];
+
+  return [...assetList].sort((a, b) => {
+    const typeA = typeOrder.indexOf(a.type);
+    const typeB = typeOrder.indexOf(b.type);
+
+    const safeTypeA = typeA === -1 ? 999 : typeA;
+    const safeTypeB = typeB === -1 ? 999 : typeB;
+
+    if (safeTypeA !== safeTypeB) return safeTypeA - safeTypeB;
+
+    return (a.name || "").localeCompare(b.name || "");
+  });
+}
+
+function renderAssets() {
+  const summary = getAssetSummary();
+  const sortedAssets = sortAssetsByType(assets);
+
+  pageTitle.textContent = "Assets";
+  pageSubtitle.textContent = "Small boat asset roster";
+
+  content.innerHTML = `
+    <section class="cards">
+      <div class="card">
+        <p>Total Assets</p>
+        <h3>${summary.total}</h3>
+      </div>
+
+      <div class="card ready">
+        <p>FMC</p>
+        <h3>${summary.fmc}</h3>
+      </div>
+
+      <div class="card warning">
+        <p>PMC</p>
+        <h3>${summary.pmc}</h3>
+      </div>
+
+      <div class="card not-ready-panel">
+        <p>NMC</p>
+        <h3>${summary.nmc}</h3>
+      </div>
+    </section>
+
+    <section class="roster-grid">
+      ${
+        sortedAssets.length === 0
+          ? `<div class="panel wide"><p class="empty-text">No assets added.</p></div>`
+          : sortedAssets.map(asset => {
+              const index = assets.indexOf(asset);
+
+              return `
+                <div class="member-card">
+                  <div class="member-header">
+                    <div>
+                      <h4>${asset.name}</h4>
+                      <p>${asset.type} | ${getAssetStatusBadge(asset.status)}</p>
+                      <p>Pursuit Capable: ${asset.pursuit}</p>
+                      <p>Crew Size: ${asset.crewSize || "4"}</p>
+                      <p>Mission Profile: ${asset.missionProfile || "SAR"}</p>
+                    </div>
+
+                    <div class="member-actions">
+                      <button class="action-btn" onclick="editAsset(${index})">Edit</button>
+                      <button class="action-btn delete-btn" onclick="deleteAsset(${index})">Delete</button>
+                    </div>
+                  </div>
+
+                  ${
+                    asset.status === "PMC" && asset.pmcDescription
+                      ? `<p class="member-notes"><strong>PMC:</strong> ${asset.pmcDescription}</p>`
+                      : ""
+                  }
+
+                  ${asset.notes ? `<p class="member-notes">${asset.notes}</p>` : ""}
+                </div>
+              `;
+            }).join("")
+      }
+    </section>
+  `;
+}
+
+window.addAsset = function() {
+  const name = safeValue("assetName").trim();
+  const type = safeValue("assetType", "45 RB-M");
+  const pursuit = safeValue("assetPursuit", "Yes");
+  const crewSize = safeValue("assetCrewSize", "4");
+  const missionProfile = safeValue("assetMissionProfile", "SAR");
+  const status = safeValue("assetStatus", "FMC");
+  const pmcDescription = safeValue("assetPmcDescription").trim();
+  const notes = safeValue("assetNotes").trim();
+
+  if (!name) {
+    const nameInput = document.getElementById("assetName");
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const assetData = {
+    name,
+    type,
+    pursuit,
+    crewSize,
+    missionProfile,
+    status,
+    pmcDescription,
+    notes
+  };
+
+  if (editingAssetIndex === null) {
+    assets.push(assetData);
+  } else {
+    assets[editingAssetIndex] = assetData;
+  }
+
+  saveAssets();
+  closeAssetModal();
+  renderAssets();
+};
+
+window.editAsset = function(index) {
+  const asset = assets[index];
+  if (!asset) return;
+
+  editingAssetIndex = index;
+
+  if (assetModalTitle) assetModalTitle.textContent = "Edit Asset";
+
+  setValue("assetName", asset.name || "");
+  setValue("assetType", asset.type || "45 RB-M");
+  setValue("assetPursuit", asset.pursuit || "Yes");
+  setValue("assetCrewSize", asset.crewSize || "4");
+  setValue("assetMissionProfile", asset.missionProfile || "SAR");
+  setValue("assetStatus", asset.status || "FMC");
+  setValue("assetPmcDescription", asset.pmcDescription || "");
+  setValue("assetNotes", asset.notes || "");
+
+  if (asset.status === "PMC") {
+    showElement("pmcBox");
+  } else {
+    hideElement("pmcBox");
+  }
+
+  assetModal.classList.remove("hidden");
+
+  const modalCard = assetModal.querySelector(".modal-card");
+  if (modalCard) modalCard.scrollTop = 0;
+
+  setTimeout(() => {
+    const nameInput = document.getElementById("assetName");
+    if (nameInput) nameInput.focus();
+  }, 150);
+};
+
+window.deleteAsset = function(index) {
+  assets.splice(index, 1);
+  saveAssets();
+  renderAssets();
+};
+
+// ---------- Asset Mission Helpers ----------
 function getAssetForMission(missionType) {
   const readyAssets = assets.filter(asset => asset.status === "FMC");
   const partialAssets = assets.filter(asset => asset.status === "PMC");
@@ -1020,28 +2166,1270 @@ function getAssetForMission(missionType) {
   };
 }
 
-function sortAssetsByType(assetList) {
-  const typeOrder = [
-    "45 RB-M",
-    "33 SPC-LE",
-    "29 RBS-II",
-    "24 SPC-SW",
-    "Other"
+// ---------- Scenario Builder ----------
+function renderScenarioBuilder() {
+  pageTitle.textContent = "Scenario Builder";
+  pageSubtitle.textContent = "Choose a planning tool";
+
+  content.innerHTML = `
+    <section class="scenario-layout">
+      <div class="panel">
+        <h3>Scenario Tools</h3>
+        <p class="member-notes">
+          Select a planning tool. Each tool opens in the scenario workspace below.
+        </p>
+
+        <button class="primary-btn scenario-btn" onclick="showAvailabilityScenarioPanel()">
+          Availability Scenario
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showCrewGeneratorPanel()">
+          Crew Generator
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showTrainingScenarioPanel()">
+          Training Crew
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showMissionPackageBuilder()">
+          Mission Package Builder
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showDailyCrewPlanner()">
+          Daily Duty Crew Planner
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showMultiAssetPlanner()">
+          Multi-Asset Mission Planner
+        </button>
+
+        <button class="secondary-btn scenario-btn" onclick="showSavedMissionPackages()">
+          Saved Mission Packages
+        </button>
+
+        <button class="primary-btn scenario-btn" onclick="showPrintCenter()">
+          Print Center
+        </button>
+      </div>
+
+      <div class="panel scenario-results-panel">
+        <h3>Scenario Workspace</h3>
+        <div id="scenarioResult">
+          Select a scenario tool to begin.
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function showAvailabilityScenarioPanel() {
+  const sortedCrew = sortMembers(crew);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Availability Scenario</h4>
+      <p>
+        Temporarily mark selected personnel unavailable without changing the saved roster.
+      </p>
+    </div>
+
+    <label>Temporary Status</label>
+    <select id="scenarioStatus">
+      <option>Leave</option>
+      <option>TDY</option>
+      <option>Medical</option>
+      <option>Restricted</option>
+      <option>PCS</option>
+      <option>A-School</option>
+      <option>Retirement</option>
+      <option>Separation</option>
+    </select>
+
+    <h4>Affected Personnel</h4>
+
+    <div class="scenario-personnel-list compact">
+      ${
+        sortedCrew.length === 0
+          ? `<p>No members available.</p>`
+          : sortedCrew.map(member => {
+              const index = crew.indexOf(member);
+
+              return `
+                <label class="scenario-person">
+                  <input type="checkbox" value="${index}">
+                  <span>${getFullDisplayName(member)} - ${member.section}</span>
+                </label>
+              `;
+            }).join("")
+      }
+    </div>
+
+    <button class="primary-btn scenario-btn" onclick="runScenario()">
+      Run Availability Scenario
+    </button>
+  `;
+}
+
+function showCrewGeneratorPanel() {
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Crew Generator</h4>
+      <p>Select the type of crew Watch Keeper should generate.</p>
+    </div>
+
+    <button class="primary-btn scenario-btn" onclick="generateSkeletonCrew()">
+      Skeleton Crew
+    </button>
+
+    <button class="primary-btn scenario-btn" onclick="generateSarCrew()">
+      SAR Crew
+    </button>
+
+    <button class="primary-btn scenario-btn" onclick="generatePursuitCrew()">
+      Pursuit Crew
+    </button>
+
+    <button class="primary-btn scenario-btn" onclick="generateRandomCrew()">
+      Random Crew
+    </button>
+  `;
+}
+
+function showTrainingScenarioPanel() {
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Training Crew Generator</h4>
+      <p>Build a training crew with mentors and break-ins when available.</p>
+    </div>
+
+    <label>Training Type</label>
+    <select id="trainingType">
+      <option>Boat Crew Training</option>
+      <option>Engineer Training</option>
+      <option>Boarding Team Training</option>
+      <option>Pursuit Training</option>
+    </select>
+
+    <button class="primary-btn scenario-btn" onclick="generateTrainingCrew()">
+      Generate Training Crew
+    </button>
+  `;
+}
+
+function showDailyCrewPlanner() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Daily Duty Crew Planner</h4>
+      <p>
+        Create a planned crew for a specific duty date. Saved crews will appear on the Dashboard when that date is selected.
+      </p>
+    </div>
+
+    <label>Duty Date</label>
+    <input id="dailyCrewDate" type="date" value="${dashboardDutyDate}">
+
+    <label>Crew Type</label>
+    <select id="dailyCrewType">
+      <option>Standby SAR Crew</option>
+      <option>Patrol Crew</option>
+      <option>Training Crew</option>
+      <option>Mission Crew</option>
+    </select>
+
+    <label>Asset</label>
+    <select id="dailyCrewAsset">
+      ${
+        missionAssets.length === 0
+          ? `<option value="">No FMC/PMC assets available</option>`
+          : missionAssets.map((asset, index) => `
+              <option value="${index}">
+                ${asset.name} - ${asset.type} - ${asset.status}
+              </option>
+            `).join("")
+      }
+    </select>
+
+    <label>Notes</label>
+    <textarea id="dailyCrewNotes" placeholder="Example: standby SAR crew, planned patrol, training objective, etc."></textarea>
+
+    <button class="primary-btn scenario-btn" onclick="generateDailyDutyCrewDraft()">
+      Generate Crew Draft
+    </button>
+  `;
+}
+
+function checkReadinessFromList(sectionName, crewList) {
+  const members = sortMembers(crewList.filter(member =>
+    member.section === sectionName &&
+    member.status === "Available"
+  ));
+
+  const missing = [];
+
+  readinessRequirements.forEach(req => {
+    const hasRequirement = members.some(member => memberHasQual(member, req));
+    if (!hasRequirement) missing.push(req);
+  });
+
+  return {
+    section: sectionName,
+    ready: missing.length === 0,
+    missing,
+    members
+  };
+}
+
+function getDayWorkerOptionsFromList(requiredQual, crewList) {
+  return sortMembers(crewList.filter(member =>
+    member.section === "Day Worker" &&
+    member.status === "Available" &&
+    memberHasQual(member, requiredQual)
+  ));
+}
+
+function renderScenarioReadinessResult(result, crewList) {
+  return `
+    <div class="scenario-readiness ${result.ready ? "ready-panel" : "not-ready-panel"}">
+      <h4>${result.section} Section</h4>
+
+      <p><strong>${result.ready ? "MISSION CAPABLE" : "NOT MISSION CAPABLE"}</strong></p>
+
+      ${
+        result.ready
+          ? `<p>No missing minimum qualifications.</p>`
+          : `
+            <p>Missing:</p>
+
+            <div class="qual-row">
+              ${result.missing.map(req => `<span class="badge missing-badge">${req}</span>`).join("")}
+            </div>
+
+            <p>Day Worker Standby Options:</p>
+
+            <ul>
+              ${
+                result.missing.map(req => {
+                  const options = getDayWorkerOptionsFromList(req, crewList);
+
+                  if (options.length === 0) {
+                    return `<li>${req}: No available Day Worker found.</li>`;
+                  }
+
+                  return `<li>${req}: ${options.map(member => getFullDisplayName(member)).join(", ")}</li>`;
+                }).join("")
+              }
+            </ul>
+          `
+      }
+    </div>
+  `;
+}
+
+function renderQualifications() {
+  pageTitle.textContent = "Qualifications";
+  pageSubtitle.textContent = "Track qualification due dates and training status";
+
+  const tracked = ["OOD", "WCH", "PCX", "CX", "ENG", "BTM", "CR"];
+  const summary = getQualificationSummary();
+  const filteredCrew = crew.filter(memberMatchesQualificationFilter);
+
+  content.innerHTML = `
+    <section class="cards">
+      <div class="card not-ready-panel">
+        <p>Overdue</p>
+        <h3>${summary.overdue}</h3>
+      </div>
+
+      <div class="card warning">
+        <p>Due Soon</p>
+        <h3>${summary.dueSoon}</h3>
+      </div>
+
+      <div class="card">
+        <p>ET</p>
+        <h3>${summary.et}</h3>
+      </div>
+
+      <div class="card">
+        <p>Training Probation</p>
+        <h3>${summary.trainingProbation}</h3>
+      </div>
+    </section>
+
+    <div class="panel wide">
+      <h3>Filter</h3>
+
+      <div class="dashboard-date-actions">
+        <button class="${qualificationFilter === "All" ? "primary-btn" : "secondary-btn"}" onclick="setQualificationFilter('All')">
+          All
+        </button>
+
+        <button class="${qualificationFilter === "Overdue" ? "primary-btn" : "secondary-btn"}" onclick="setQualificationFilter('Overdue')">
+          Overdue
+        </button>
+
+        <button class="${qualificationFilter === "Due Soon" ? "primary-btn" : "secondary-btn"}" onclick="setQualificationFilter('Due Soon')">
+          Due Soon
+        </button>
+
+        <button class="${qualificationFilter === "ET" ? "primary-btn" : "secondary-btn"}" onclick="setQualificationFilter('ET')">
+          ET
+        </button>
+
+        <button class="${qualificationFilter === "Training Probation" ? "primary-btn" : "secondary-btn"}" onclick="setQualificationFilter('Training Probation')">
+          Training Probation
+        </button>
+      </div>
+    </div>
+
+    <section class="dashboard-grid">
+      ${
+        filteredCrew.length === 0
+          ? `<div class="panel wide"><p class="empty-text">No personnel match this filter.</p></div>`
+          : filteredCrew.map(member => {
+              const index = crew.indexOf(member);
+
+              return `
+                <div class="member-card">
+                  <h4>
+                    ${getFullDisplayName(member)}
+                    ${
+                      memberHasOverdueQual(member)
+                        ? `<span class="qual-status qual-overdue">OVERDUE</span>`
+                        : ""
+                    }
+                  </h4>
+
+                  <p>${member.section} | ${member.status}</p>
+
+                  <label>Qualification Status</label>
+                  <select onchange="updateQualificationStatus(${index}, this.value)">
+                    <option value="" ${!member.qualificationStatus ? "selected" : ""}>None</option>
+                    <option value="ET" ${member.qualificationStatus === "ET" ? "selected" : ""}>ET</option>
+                    <option value="TRAINING PROBATION" ${member.qualificationStatus === "TRAINING PROBATION" ? "selected" : ""}>TRAINING PROBATION</option>
+                  </select>
+
+                  ${tracked.map(qual => {
+                    const status = getQualDueStatus(member.qualDueDates?.[qual]);
+
+                    return `
+                      <div class="qual-date-row">
+                        <label>${qual} Due Date</label>
+
+                        <input
+                          type="date"
+                          value="${member.qualDueDates?.[qual] || ""}"
+                          onchange="updateQualDueDate(${index}, '${qual}', this.value)"
+                        >
+
+                        <span class="qual-status ${status.className}">
+                          ${status.label}
+                        </span>
+                      </div>
+                    `;
+                  }).join("")}
+                </div>
+              `;
+            }).join("")
+      }
+    </section>
+  `;
+}
+
+function getQualificationSummary() {
+  let overdue = 0;
+  let dueSoon = 0;
+  let et = 0;
+  let trainingProbation = 0;
+
+  crew.forEach(member => {
+    if (member.qualificationStatus === "ET") et++;
+    if (member.qualificationStatus === "TRAINING PROBATION") trainingProbation++;
+
+    if (member.qualDueDates) {
+      Object.values(member.qualDueDates).forEach(dateString => {
+        const status = getQualDueStatus(dateString);
+
+        if (status.className === "qual-overdue") overdue++;
+        if (status.className === "qual-warning") dueSoon++;
+      });
+    }
+  });
+
+  return {
+    overdue,
+    dueSoon,
+    et,
+    trainingProbation
+  };
+}
+
+function memberMatchesQualificationFilter(member) {
+  if (qualificationFilter === "All") return true;
+
+  if (qualificationFilter === "Overdue") {
+    return memberHasOverdueQual(member);
+  }
+
+  if (qualificationFilter === "Due Soon") {
+    if (!member.qualDueDates) return false;
+
+    return Object.values(member.qualDueDates).some(dateString => {
+      const status = getQualDueStatus(dateString);
+      return status.className === "qual-warning";
+    });
+  }
+
+  if (qualificationFilter === "ET") {
+    return member.qualificationStatus === "ET";
+  }
+
+  if (qualificationFilter === "Training Probation") {
+    return member.qualificationStatus === "TRAINING PROBATION";
+  }
+
+  return true;
+}
+
+window.setQualificationFilter = function(filter) {
+  qualificationFilter = filter;
+  renderQualifications();
+};
+
+function getQualDueStatus(dateString) {
+  if (!dateString) {
+    return {
+      label: "No Date",
+      className: "qual-no-date"
+    };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dueDate = new Date(dateString);
+  dueDate.setHours(0, 0, 0, 0);
+
+  const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+
+  if (daysUntil < 0) {
+    return {
+      label: `OVERDUE by ${Math.abs(daysUntil)} days`,
+      className: "qual-overdue"
+    };
+  }
+
+  if (daysUntil <= 30) {
+    return {
+      label: `Due in ${daysUntil} days`,
+      className: "qual-warning"
+    };
+  }
+
+  return {
+    label: `Current - ${daysUntil} days`,
+    className: "qual-current"
+  };
+}
+
+function memberHasOverdueQual(member) {
+  if (!member.qualDueDates) return false;
+
+  return Object.values(member.qualDueDates).some(dateString => {
+    const status = getQualDueStatus(dateString);
+    return status.className === "qual-overdue";
+  });
+}
+
+function showPrintCenter() {
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Print Center</h4>
+
+      <p>
+        Generate printable planning documents for operations,
+        duty days, training, and missions.
+      </p>
+    </div>
+
+    <button class="primary-btn scenario-btn"
+      onclick="showDailyPlanPrint()">
+      Daily Duty Plan
+    </button>
+
+    <button class="primary-btn scenario-btn"
+      onclick="showMissionPlanPrint()">
+      Mission Planning Sheet
+    </button>
+
+    <button class="secondary-btn scenario-btn"
+      onclick="window.print()">
+      Print Current Dashboard
+    </button>
+  `;
+}
+
+function showDailyPlanPrint() {
+
+  const crews =
+    plannedCrews.filter(
+      crew => crew.dutyDate === dashboardDutyDate
+    );
+
+  const section =
+    getDutySectionForDate(dashboardDutyDate);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="print-sheet printable-report">
+
+      <h2>WATCH KEEPER DAILY DUTY PLAN</h2>
+
+      <p>
+        <strong>Date:</strong>
+        ${dashboardDutyDate}
+      </p>
+
+      <p>
+        <strong>Duty Section:</strong>
+        ${section}
+      </p>
+
+      ${
+        crews.length === 0
+          ? `
+            <p>
+              No planned crews saved.
+            </p>
+          `
+          : crews.map(plan => `
+              <div class="scenario-summary">
+
+                <h3>${plan.missionType}</h3>
+
+                <p>
+                  <strong>Asset:</strong>
+                  ${plan.asset.name}
+                </p>
+
+                <ul>
+                  ${plan.crew.map(item => `
+                    <li>
+                      <strong>${item.role}</strong> —
+                      ${getFullDisplayName(item.member)}
+                    </li>
+                  `).join("")}
+                </ul>
+
+                ${
+                  plan.notes
+                    ? `
+                      <p>
+                        <strong>Notes:</strong>
+                        ${plan.notes}
+                      </p>
+                    `
+                    : ""
+                }
+
+              </div>
+          `).join("")
+      }
+
+      <button
+        class="primary-btn scenario-btn no-print"
+        onclick="window.print()"
+      >
+        Print Daily Plan
+      </button>
+
+    </div>
+  `;
+}
+
+function showMissionPlanPrint() {
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="print-sheet">
+
+      <h2>MISSION PLANNING SHEET</h2>
+
+      <label>Mission Name</label>
+      <input id="missionName">
+
+      <label>Mission Type</label>
+      <input id="missionType">
+
+      <label>Location</label>
+      <input id="missionLocation">
+
+      <label>Primary Asset</label>
+      <input id="missionAsset">
+
+      <label>Mission Objective</label>
+      <textarea id="missionObjective"></textarea>
+
+      <label>Weather</label>
+      <textarea id="missionWeather"></textarea>
+
+      <label>Communications Plan</label>
+      <textarea id="missionComms"></textarea>
+
+      <label>Risk Factors</label>
+      <textarea id="missionRisk"></textarea>
+
+      <label>Additional Notes</label>
+      <textarea id="missionNotes"></textarea>
+
+      <button
+        class="primary-btn scenario-btn"
+        onclick="generateMissionPlanningSheet()"
+      >
+        Generate Printable Sheet
+      </button>
+
+    </div>
+  `;
+}
+
+function generateMissionPlanningSheet() {
+
+  const missionName =
+    document.getElementById("missionName").value;
+
+  const missionType =
+    document.getElementById("missionType").value;
+
+  const location =
+    document.getElementById("missionLocation").value;
+
+  const asset =
+    document.getElementById("missionAsset").value;
+
+  const objective =
+    document.getElementById("missionObjective").value;
+
+  const weather =
+    document.getElementById("missionWeather").value;
+
+  const comms =
+    document.getElementById("missionComms").value;
+
+  const risk =
+    document.getElementById("missionRisk").value;
+
+  const notes =
+    document.getElementById("missionNotes").value;
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="print-sheet printable-report">
+
+      <h2>${missionName}</h2>
+
+      <p><strong>Mission Type:</strong> ${missionType}</p>
+
+      <p><strong>Location:</strong> ${location}</p>
+
+      <p><strong>Primary Asset:</strong> ${asset}</p>
+
+      <h3>Mission Objective</h3>
+      <p>${objective}</p>
+
+      <h3>Weather</h3>
+      <p>${weather}</p>
+
+      <h3>Communications Plan</h3>
+      <p>${comms}</p>
+
+      <h3>Risk Factors</h3>
+      <p>${risk}</p>
+
+      <h3>Notes</h3>
+      <p>${notes}</p>
+
+      <button
+        class="primary-btn scenario-btn no-print"
+        onclick="window.print()"
+      >
+        Print Mission Sheet
+      </button>
+
+    </div>
+  `;
+}
+
+window.updateQualDueDate = function(index, qual, value) {
+  if (!crew[index]) return;
+
+  if (!crew[index].qualDueDates) {
+    crew[index].qualDueDates = {};
+  }
+
+  if (value) {
+    crew[index].qualDueDates[qual] = value;
+  } else {
+    delete crew[index].qualDueDates[qual];
+  }
+
+  saveCrew();
+};
+
+window.updateQualificationStatus = function(index, value) {
+  if (!crew[index]) return;
+
+  crew[index].qualificationStatus = value;
+  saveCrew();
+
+  renderQualifications();
+};
+
+window.runScenario = function() {
+  const selectedInputs = [...document.querySelectorAll(".scenario-person input:checked")];
+
+  if (selectedInputs.length === 0) {
+    const result = document.getElementById("scenarioResult");
+    result.innerHTML = `
+      <div class="scenario-readiness not-ready-panel">
+        <h4>No Personnel Selected</h4>
+        <p>Select at least one affected member.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const temporaryStatus = safeValue("scenarioStatus", "Leave");
+  const simulatedCrew = JSON.parse(JSON.stringify(crew));
+  const affectedMembers = [];
+
+  selectedInputs.forEach(input => {
+    const originalIndex = Number(input.value);
+    if (!simulatedCrew[originalIndex]) return;
+
+    simulatedCrew[originalIndex].status = temporaryStatus;
+    affectedMembers.push(simulatedCrew[originalIndex]);
+  });
+
+  const portResult = checkReadinessFromList("PORT", simulatedCrew);
+  const stbdResult = checkReadinessFromList("STBD", simulatedCrew);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>Availability Scenario Applied</h4>
+      <p><strong>Temporary Status:</strong> ${temporaryStatus}</p>
+
+      <p><strong>Affected Personnel:</strong></p>
+      <ul>
+        ${affectedMembers.map(member => `<li>${getFullDisplayName(member)} - ${member.section}</li>`).join("")}
+      </ul>
+    </div>
+
+    ${renderScenarioReadinessResult(portResult, simulatedCrew)}
+    ${renderScenarioReadinessResult(stbdResult, simulatedCrew)}
+  `;
+};
+
+window.generateDailyDutyCrewDraft = function() {
+  const dutyDate = document.getElementById("dailyCrewDate").value;
+  const crewType = document.getElementById("dailyCrewType").value;
+  const notes = document.getElementById("dailyCrewNotes").value.trim();
+
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAssetIndex = Number(document.getElementById("dailyCrewAsset").value);
+  const selectedAsset = missionAssets[selectedAssetIndex];
+
+  if (!dutyDate) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select a duty date.</p>
+      </div>
+    `);
+    return;
+  }
+
+  if (!selectedAsset) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select an FMC or PMC asset.</p>
+      </div>
+    `);
+    return;
+  }
+
+  let missionType = "SAR";
+
+  if (crewType === "Patrol Crew") missionType = "SAR";
+  if (crewType === "Standby SAR Crew") missionType = "SAR";
+  if (crewType === "Training Crew") missionType = "Training";
+  if (crewType === "Mission Crew") missionType = selectedAsset.missionProfile || "SAR";
+
+  const generatedCrew = buildMissionCrewForType(missionType);
+  const availableCrew = getAvailableCrewForGenerators();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report">
+      <h3>Daily Duty Crew Draft</h3>
+
+      <div class="scenario-summary">
+        <p><strong>Duty Date:</strong> ${dutyDate}</p>
+        <p><strong>Crew Type:</strong> ${crewType}</p>
+        <p><strong>Asset:</strong> ${selectedAsset.name} - ${selectedAsset.type} - ${selectedAsset.status}</p>
+        <p><strong>Notes:</strong> ${notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-readiness ${generatedCrew.missingRoles.length === 0 ? "ready-panel" : "not-ready-panel"}">
+        <h4>Review / Override Crew</h4>
+
+        ${Object.keys(generatedCrew.filledRoles).map(role => `
+          <label>${role}</label>
+          <select class="daily-role-select" data-role="${role}">
+            ${availableCrew.map(member => `
+              <option
+                value="${crew.indexOf(member)}"
+                ${crew.indexOf(member) === crew.indexOf(generatedCrew.filledRoles[role]) ? "selected" : ""}
+              >
+                ${getFullDisplayName(member)} - ${member.section}
+              </option>
+            `).join("")}
+          </select>
+        `).join("")}
+
+        ${
+          generatedCrew.missingRoles.length > 0
+            ? `
+              <h4>Missing Roles</h4>
+              <div class="qual-row">
+                ${generatedCrew.missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
+              </div>
+            `
+            : `<p class="member-notes">All roles filled. Review or override before saving.</p>`
+        }
+      </div>
+
+      <button class="primary-btn scenario-btn" onclick="saveDailyDutyCrew('${dutyDate}', '${crewType}', ${selectedAssetIndex}, \`${notes.replace(/`/g, "'")}\`)">
+        Save Daily Duty Crew
+      </button>
+
+      <button class="secondary-btn scenario-btn" onclick="showDailyCrewPlanner()">
+        Back
+      </button>
+    </div>
+  `;
+};
+
+window.saveDailyDutyCrew = function(dutyDate, crewType, selectedAssetIndex, notes) {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAsset = missionAssets[selectedAssetIndex];
+
+  const selectedRoles = [...document.querySelectorAll(".daily-role-select")].map(select => {
+    const role = select.dataset.role;
+    const member = crew[Number(select.value)];
+
+    return {
+      role,
+      member
+    };
+  }).filter(item => item.member);
+
+  const plannedCrew = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionType: crewType,
+    asset: selectedAsset,
+    crew: selectedRoles,
+    notes,
+    checklistHTML: "",
+    dutyDate
+  };
+
+  plannedCrews.push(plannedCrew);
+  savePlannedCrews();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-readiness ready-panel">
+      <h4>Daily Duty Crew Saved</h4>
+      <p>${crewType} saved for ${dutyDate}.</p>
+      <p>This crew will appear on the Dashboard when that date is selected.</p>
+    </div>
+  `;
+};
+
+// ---------- Crew Generator Helpers ----------
+function getAvailableCrewForGenerators() {
+  return sortMembers(crew.filter(member =>
+    member.status === "Available" &&
+    (
+      member.section === "PORT" ||
+      member.section === "STBD" ||
+      member.section === "Day Worker"
+    )
+  ));
+}
+
+function renderCrewResult(title, description, requiredRoles, filledRoles, missingRoles, extraSummary = "") {
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>${title}</h4>
+      <p>${description}</p>
+      ${extraSummary}
+    </div>
+
+    ${
+      missingRoles.length === 0
+        ? `<div class="scenario-readiness ready-panel">
+            <h4>Crew Found</h4>
+            <ul>
+              ${requiredRoles.map(role => `
+                <li>
+                  <strong>${role}:</strong>
+                  ${getFullDisplayName(filledRoles[role])}
+                </li>
+              `).join("")}
+            </ul>
+          </div>`
+        : `<div class="scenario-readiness not-ready-panel">
+            <h4>Crew Incomplete</h4>
+
+            <p>Filled Roles:</p>
+            <ul>
+              ${Object.keys(filledRoles).map(role => `
+                <li>
+                  <strong>${role}:</strong>
+                  ${getFullDisplayName(filledRoles[role])}
+                </li>
+              `).join("") || "<li>No roles filled.</li>"}
+            </ul>
+
+            <p>Missing Roles:</p>
+            <div class="qual-row">
+              ${missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
+            </div>
+          </div>`
+    }
+  `;
+}
+
+function buildCrewFromRoles(requiredRoles, roleChecks, randomize = false) {
+  const availableCrew = getAvailableCrewForGenerators();
+  const crewPool = randomize ? [...availableCrew].sort(() => Math.random() - 0.5) : availableCrew;
+
+  const selectedCrew = [];
+  const filledRoles = {};
+  const missingRoles = [];
+
+  requiredRoles.forEach(role => {
+    const candidate = crewPool.find(member =>
+      !selectedCrew.includes(member) &&
+      roleChecks[role](member)
+    );
+
+    if (candidate) {
+      selectedCrew.push(candidate);
+      filledRoles[role] = candidate;
+    } else {
+      missingRoles.push(role);
+    }
+  });
+
+  return {
+    filledRoles,
+    missingRoles
+  };
+}
+
+window.generateSkeletonCrew = function() {
+  const requiredRoles = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
+
+  const roleChecks = {
+    OOD: member => memberHasQual(member, "OOD"),
+    PCX: member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"),
+    PG: member => memberHasQual(member, "PG"),
+    ENG: member => memberHasQual(member, "ENG"),
+    BO: member => memberHasQual(member, "BO"),
+    BTM: member => memberHasQual(member, "BTM") || memberHasQual(member, "BO")
+  };
+
+  const result = buildCrewFromRoles(requiredRoles, roleChecks);
+
+  renderCrewResult(
+    "Skeleton Crew Generator",
+    "Watch Keeper attempted to build a bare-minimum crew using available PORT, STBD, and Day Worker personnel.",
+    requiredRoles,
+    result.filledRoles,
+    result.missingRoles
+  );
+};
+
+window.generateSarCrew = function() {
+  const assetCheck = getAssetForMission("SAR");
+
+  const requiredRoles = [
+    "Coxswain",
+    "Engineer",
+    "Boarding / Crew Support",
+    "Additional Crew"
   ];
 
-  return [...assetList].sort((a, b) => {
-    const typeA = typeOrder.indexOf(a.type);
-    const typeB = typeOrder.indexOf(b.type);
+  const roleChecks = {
+    "Coxswain": member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"),
+    "Engineer": member => memberHasQual(member, "ENG"),
+    "Boarding / Crew Support": member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"),
+    "Additional Crew": member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "ENG") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+  };
 
-    const safeTypeA = typeA === -1 ? 999 : typeA;
-    const safeTypeB = typeB === -1 ? 999 : typeB;
+  const result = buildCrewFromRoles(requiredRoles, roleChecks);
 
-    if (safeTypeA !== safeTypeB) {
-      return safeTypeA - safeTypeB;
+  renderCrewResult(
+    "SAR Crew Generator",
+    "Watch Keeper attempted to build a SAR crew using available PORT, STBD, and Day Worker personnel.",
+    requiredRoles,
+    result.filledRoles,
+    result.missingRoles,
+    `<p><strong>Asset Check:</strong> ${assetCheck.message}</p>`
+  );
+};
+
+window.generatePursuitCrew = function() {
+  const assetCheck = getAssetForMission("Pursuit");
+
+  const requiredRoles = [
+    "Pursuit Coxswain",
+    "Pursuit Gunner",
+    "Engineer",
+    "Boarding / Crew Support",
+    "Additional Crew"
+  ];
+
+  const roleChecks = {
+    "Pursuit Coxswain": member => memberHasQual(member, "PCX"),
+    "Pursuit Gunner": member => memberHasQual(member, "PG"),
+    "Engineer": member => memberHasQual(member, "ENG"),
+    "Boarding / Crew Support": member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"),
+    "Additional Crew": member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "ENG") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+  };
+
+  const result = buildCrewFromRoles(requiredRoles, roleChecks);
+
+  renderCrewResult(
+    "Pursuit Crew Generator",
+    "Watch Keeper attempted to build a pursuit-capable crew using available PORT, STBD, and Day Worker personnel.",
+    requiredRoles,
+    result.filledRoles,
+    result.missingRoles,
+    `<p><strong>Asset Check:</strong> ${assetCheck.message}</p>`
+  );
+};
+
+window.generateRandomCrew = function() {
+  const requiredRoles = [
+    "Coxswain",
+    "Engineer",
+    "Boarding / Crew Support",
+    "Additional Crew"
+  ];
+
+  const roleChecks = {
+    "Coxswain": member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"),
+    "Engineer": member => memberHasQual(member, "ENG"),
+    "Boarding / Crew Support": member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"),
+    "Additional Crew": member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "ENG") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+  };
+
+  const result = buildCrewFromRoles(requiredRoles, roleChecks, true);
+
+  renderCrewResult(
+    "Random Crew Generator",
+    "Watch Keeper randomly selected a crew from available PORT, STBD, and Day Worker personnel.",
+    requiredRoles,
+    result.filledRoles,
+    result.missingRoles
+  );
+};
+
+window.generateTrainingCrew = function() {
+  const trainingType = safeValue("trainingType", "Boat Crew Training");
+  const availableCrew = getAvailableCrewForGenerators();
+  const breakIns = availableCrew.filter(member => memberHasQual(member, "B/I"));
+
+  const selectedCrew = [];
+  const filledRoles = {};
+
+  function selectMember(role, condition) {
+    const candidate = availableCrew.find(member =>
+      !selectedCrew.includes(member) &&
+      condition(member)
+    );
+
+    if (candidate) {
+      selectedCrew.push(candidate);
+      filledRoles[role] = candidate;
     }
+  }
 
-    return (a.name || "").localeCompare(b.name || "");
-  });
+  if (trainingType === "Boat Crew Training") {
+    selectMember("Mentor / Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
+    selectMember("Break-In / Trainee", member => breakIns.includes(member));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+    selectMember("Additional Crew", member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "ENG") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+    );
+  }
+
+  if (trainingType === "Engineer Training") {
+    selectMember("Engineer Mentor", member => memberHasQual(member, "ENG"));
+    selectMember("Break-In / Trainee", member => breakIns.includes(member));
+    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
+    selectMember("Additional Crew", member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+    );
+  }
+
+  if (trainingType === "Boarding Team Training") {
+    selectMember("Boarding Mentor", member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"));
+    selectMember("Break-In / Trainee", member => breakIns.includes(member));
+    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+  }
+
+  if (trainingType === "Pursuit Training") {
+    selectMember("Pursuit Coxswain Mentor", member => memberHasQual(member, "PCX"));
+    selectMember("Pursuit Gunner Mentor", member => memberHasQual(member, "PG"));
+    selectMember("Break-In / Trainee", member => breakIns.includes(member));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+    selectMember("Additional Crew", member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+    );
+  }
+
+  const missingTrainingPiece = !filledRoles["Break-In / Trainee"];
+  const requiredRoles = Object.keys(filledRoles);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-summary">
+      <h4>${trainingType}</h4>
+      <p>Watch Keeper generated a training crew using available PORT, STBD, and Day Worker personnel.</p>
+    </div>
+
+    <div class="scenario-readiness ${missingTrainingPiece ? "not-ready-panel" : "ready-panel"}">
+      <h4>Training Crew ${missingTrainingPiece ? "Needs Review" : "Found"}</h4>
+
+      ${
+        requiredRoles.length === 0
+          ? `<p>No suitable personnel found.</p>`
+          : `
+            <ul>
+              ${requiredRoles.map(role => `
+                <li>
+                  <strong>${role}:</strong>
+                  ${getFullDisplayName(filledRoles[role])}
+                </li>
+              `).join("")}
+            </ul>
+          `
+      }
+
+      ${
+        missingTrainingPiece
+          ? `<p class="member-notes">No B/I member was found for this training scenario.</p>`
+          : `<p class="member-notes">Training crew includes a B/I member.</p>`
+      }
+    </div>
+  `;
+};
+
+// ---------- Mission Package Builder ----------
+function buildMissionCrewForType(missionType) {
+  const availableCrew = getAvailableCrewForGenerators();
+  const selectedCrew = [];
+  const filledRoles = {};
+  const missingRoles = [];
+
+  function selectMember(role, condition) {
+    const candidate = availableCrew.find(member =>
+      !selectedCrew.includes(member) &&
+      condition(member)
+    );
+
+    if (candidate) {
+      selectedCrew.push(candidate);
+      filledRoles[role] = candidate;
+    } else {
+      missingRoles.push(role);
+    }
+  }
+
+  if (missionType === "Pursuit") {
+    selectMember("Pursuit Coxswain", member => memberHasQual(member, "PCX"));
+    selectMember("Pursuit Gunner", member => memberHasQual(member, "PG"));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+    selectMember("Boarding / Crew Support", member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"));
+  } else if (missionType === "LE Boarding") {
+    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+    selectMember("Boarding Officer", member => memberHasQual(member, "BO"));
+    selectMember("Boarding Team Member", member => memberHasQual(member, "BTM") || memberHasQual(member, "BO"));
+  } else {
+    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
+    selectMember("Engineer", member => memberHasQual(member, "ENG"));
+    selectMember("Crew / Support", member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO")
+    );
+    selectMember("Additional Crew", member =>
+      memberHasQual(member, "CR") ||
+      memberHasQual(member, "BTM") ||
+      memberHasQual(member, "BO") ||
+      memberHasQual(member, "ENG") ||
+      memberHasQual(member, "CX") ||
+      memberHasQual(member, "PCX")
+    );
+  }
+
+  return {
+    filledRoles,
+    missingRoles
+  };
 }
 
 window.showMissionPackageBuilder = function() {
@@ -1052,9 +3440,7 @@ window.showMissionPackageBuilder = function() {
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
       <h4>Mission Package Builder</h4>
-      <p>
-        Build a printable mission planning package with asset, crew, and checklist notes.
-      </p>
+      <p>Build a printable mission planning package with asset, crew, and checklist notes.</p>
     </div>
 
     <div class="mission-package-form">
@@ -1071,7 +3457,7 @@ window.showMissionPackageBuilder = function() {
       <select id="missionPackageAsset">
         ${
           missionAssets.length === 0
-            ? `<option>No FMC/PMC assets available</option>`
+            ? `<option value="">No FMC/PMC assets available</option>`
             : missionAssets.map((asset, index) => `
                 <option value="${index}">
                   ${asset.name} - ${asset.type} - ${asset.status}
@@ -1100,125 +3486,41 @@ window.showMissionPackageBuilder = function() {
   `;
 };
 
-window.showSavedMissionPackages = function() {
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Saved Mission Packages</h4>
-      <p>View, print, or delete saved mission packages.</p>
-    </div>
-
-    ${
-      missionPackages.length === 0
-        ? `<p class="empty-text">No saved mission packages.</p>`
-        : missionPackages
-            .slice()
-            .reverse()
-            .map(pkg => `
-              <div class="member-card">
-                <div class="member-header">
-                  <div>
-                    <h4>${pkg.missionType} - ${pkg.asset.name}</h4>
-                    <p>${new Date(pkg.createdAt).toLocaleString()}</p>
-                    <p>${pkg.asset.type} | ${pkg.asset.status}</p>
-                  </div>
-
-                  <div class="member-actions">
-                    <button class="action-btn" onclick="viewMissionPackage(${pkg.id})">View</button>
-                    <button class="action-btn delete-btn" onclick="deleteMissionPackage(${pkg.id})">Delete</button>
-                  </div>
-                </div>
-              </div>
-            `).join("")
-    }
-  `;
-};
-
-window.viewMissionPackage = function(id) {
-  const pkg = missionPackages.find(item => item.id === id);
-
-  if (!pkg) return;
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="mission-package-report printable-report">
-      <h3>Watch Keeper Mission Package</h3>
-
-      <div class="scenario-summary">
-        <p><strong>Mission Type:</strong> ${pkg.missionType}</p>
-        <p><strong>Asset:</strong> ${pkg.asset.name} - ${pkg.asset.type} - ${pkg.asset.status}</p>
-        <p><strong>Created:</strong> ${new Date(pkg.createdAt).toLocaleString()}</p>
-      </div>
-
-      <div class="scenario-summary">
-        <h4>Crew Assignment</h4>
-        <ul>
-          ${pkg.crew.map(item => `
-            <li>
-              <strong>${item.role}:</strong>
-              ${getFullDisplayName(item.member)}
-            </li>
-          `).join("")}
-        </ul>
-      </div>
-
-      <div class="scenario-summary">
-        <h4>Mission Notes</h4>
-        <p>${pkg.notes || "No notes entered."}</p>
-      </div>
-
-      <div class="scenario-summary">
-        <h4>Briefing Checklist</h4>
-        ${pkg.checklistHTML}
-      </div>
-
-      <button class="primary-btn scenario-btn no-print" onclick="window.print()">
-        Print Mission Package
-      </button>
-
-      <button class="secondary-btn scenario-btn no-print" onclick="showSavedMissionPackages()">
-        Back to Saved Packages
-      </button>
-    </div>
-  `;
-};
-
-window.deleteMissionPackage = function(id) {
-  const confirmDelete = confirm("Delete this saved mission package?");
-
-  if (!confirmDelete) return;
-
-  missionPackages = missionPackages.filter(pkg => pkg.id !== id);
-  saveMissionPackages();
-  showSavedMissionPackages();
-};
-
 window.generateMissionPackage = function() {
   const missionAssets = assets.filter(asset =>
     asset.status === "FMC" || asset.status === "PMC"
   );
 
   if (missionAssets.length === 0) {
-    alert("No FMC or PMC assets available.");
+    document.getElementById("scenarioResult").innerHTML = `
+      <div class="scenario-readiness not-ready-panel">
+        <h4>No Available Assets</h4>
+        <p>No FMC or PMC assets are available.</p>
+      </div>
+    `;
     return;
   }
 
-  const missionType = document.getElementById("missionPackageType").value;
-  const selectedAssetIndex = Number(document.getElementById("missionPackageAsset").value);
+  const missionType = safeValue("missionPackageType", "SAR");
+  const selectedAssetIndex = Number(safeValue("missionPackageAsset", "0"));
   const selectedAsset = missionAssets[selectedAssetIndex];
-  const notes = document.getElementById("missionPackageNotes").value.trim();
+  const notes = safeValue("missionPackageNotes").trim();
+
+  if (!selectedAsset) {
+    document.getElementById("scenarioResult").innerHTML = `
+      <div class="scenario-readiness not-ready-panel">
+        <h4>No Asset Selected</h4>
+        <p>Select an FMC or PMC asset before generating a mission package.</p>
+      </div>
+    `;
+    return;
+  }
 
   const checklist = [...document.querySelectorAll(".mission-checklist input:checked")]
     .map(input => input.value);
 
   const generatedCrew = buildMissionCrewForType(missionType);
-
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
+  const availableCrew = getAvailableCrewForGenerators();
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="mission-package-report">
@@ -1293,6 +3595,8 @@ window.finalizeMissionPackage = function(missionType, selectedAssetIndex) {
 
   const selectedAsset = missionAssets[selectedAssetIndex];
 
+  if (!selectedAsset) return;
+
   const selectedRoles = [...document.querySelectorAll(".mission-role-select")].map(select => {
     const role = select.dataset.role;
     const member = crew[Number(select.value)];
@@ -1301,26 +3605,27 @@ window.finalizeMissionPackage = function(missionType, selectedAssetIndex) {
       role,
       member
     };
-  });
+  }).filter(item => item.member);
 
-  const notes = document.getElementById("draftMissionNotes").textContent;
-  const checklistHTML = document.getElementById("draftChecklist").innerHTML;
+  const notes = document.getElementById("draftMissionNotes")?.textContent || "";
+  const checklistHTML = document.getElementById("draftChecklist")?.innerHTML || "";
 
   const savedPackage = {
-  id: Date.now(),
-  createdAt: new Date().toISOString(),
-  missionType,
-  asset: selectedAsset,
-  crew: selectedRoles.map(item => ({
-    role: item.role,
-    member: item.member
-  })),
-  notes,
-  checklistHTML
-};
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionType,
+    asset: selectedAsset,
+    crew: selectedRoles.map(item => ({
+      role: item.role,
+      member: item.member
+    })),
+    notes,
+    checklistHTML
+  };
 
-missionPackages.push(savedPackage);
-saveMissionPackages();
+  missionPackages.push(savedPackage);
+  saveMissionPackages();
+
   document.getElementById("scenarioResult").innerHTML = `
     <div class="mission-package-report printable-report">
       <h3>Watch Keeper Mission Package</h3>
@@ -1361,785 +3666,239 @@ saveMissionPackages();
       <button class="primary-btn scenario-btn no-print" onclick="window.print()">
         Print Mission Package
       </button>
+
+      <button class="secondary-btn scenario-btn no-print" onclick="saveAsPlannedCrew(${savedPackage.id})">
+        Save as Planned Crew
+      </button>
     </div>
   `;
 };
 
-function isDuplicateMember(rank, firstName, middleInitial, lastName, editingIndexValue = null) {
-  return crew.some((member, index) => {
-    if (editingIndexValue !== null && index === editingIndexValue) return false;
+window.saveAsPlannedCrew = function(packageId) {
+  pendingPlannedCrewPackageId = packageId;
 
-    return (
-      (member.rank || "").trim().toLowerCase() === rank.trim().toLowerCase() &&
-      (member.firstName || "").trim().toLowerCase() === firstName.trim().toLowerCase() &&
-      (member.middleInitial || "").trim().toLowerCase() === middleInitial.trim().toLowerCase() &&
-      (member.lastName || "").trim().toLowerCase() === lastName.trim().toLowerCase()
-    );
-  });
-}
+  const today = new Date().toISOString().slice(0, 10);
 
-function buildMissionCrewForType(missionType) {
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
+  const existingBox = document.getElementById("plannedCrewDateBox");
+  if (existingBox) existingBox.remove();
 
-  const selectedCrew = [];
-  const filledRoles = {};
-  const missingRoles = [];
+  document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+    <div class="scenario-summary no-print" id="plannedCrewDateBox">
+      <h4>Save as Planned Crew</h4>
 
-  function selectMember(role, condition) {
-    const candidate = availableCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      condition(member)
-    );
+      <label>Duty Date</label>
+      <input id="plannedCrewDutyDate" type="date" value="${today}">
 
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    } else {
-      missingRoles.push(role);
-    }
-  }
+      <button class="primary-btn scenario-btn" onclick="confirmSavePlannedCrew()">
+        Confirm Save
+      </button>
 
-  if (missionType === "Pursuit") {
-    selectMember("Pursuit Coxswain", member => memberHasQual(member, "PCX"));
-    selectMember("Pursuit Gunner", member => memberHasQual(member, "PG"));
-    selectMember("Engineer", member => memberHasQual(member, "ENG"));
-    selectMember("Boarding / Crew Support", member => memberHasQual(member, "BO") || memberHasQual(member, "BTM"));
-  } else if (missionType === "LE Boarding") {
-    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
-    selectMember("Engineer", member => memberHasQual(member, "ENG"));
-    selectMember("Boarding Officer", member => memberHasQual(member, "BO"));
-    selectMember("Boarding Team Member", member => memberHasQual(member, "BTM") || memberHasQual(member, "BO"));
-  } else {
-    selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
-    selectMember("Engineer", member => memberHasQual(member, "ENG"));
-    selectMember("Crew / Support", member =>
-      memberHasQual(member, "CR") ||
-      memberHasQual(member, "BTM") ||
-      memberHasQual(member, "BO")
-    );
-    selectMember("Additional Crew", member =>
-      memberHasQual(member, "CR") ||
-      memberHasQual(member, "BTM") ||
-      memberHasQual(member, "BO") ||
-      memberHasQual(member, "ENG") ||
-      memberHasQual(member, "CX") ||
-      memberHasQual(member, "PCX")
-    );
-  }
+      <button class="secondary-btn scenario-btn" onclick="cancelSavePlannedCrew()">
+        Cancel
+      </button>
+    </div>
+  `);
 
-  return {
-    filledRoles,
-    missingRoles
-  };
-}
+  setTimeout(() => {
+    const dateInput = document.getElementById("plannedCrewDutyDate");
+    if (dateInput) dateInput.focus();
+  }, 100);
+};
 
-function renderScenarioBuilder() {
-  pageTitle.textContent = "Scenario Builder";
-  pageSubtitle.textContent = "Run availability checks, mission crews, and training crews";
+window.confirmSavePlannedCrew = function() {
+  const pkg = missionPackages.find(item => item.id === pendingPlannedCrewPackageId);
 
-  const sortedCrew = sortMembers(crew);
-
-  content.innerHTML = `
-    <section class="scenario-layout">
-
-      <div class="panel">
-        <h3>Personnel Availability</h3>
-        <p class="member-notes">
-          Temporarily mark selected personnel unavailable without changing the saved roster.
-        </p>
-
-        <label>Temporary Status</label>
-        <select id="scenarioStatus">
-          <option>Leave</option>
-          <option>TDY</option>
-          <option>Medical</option>
-          <option>Restricted</option>
-          <option>PCS</option>
-          <option>A-School</option>
-          <option>Retirement</option>
-          <option>Separation</option>
-        </select>
-
-        <h4>Affected Personnel</h4>
-
-        <div class="scenario-personnel-list compact">
-          ${
-            sortedCrew.length === 0
-              ? `<p>No members available.</p>`
-              : sortedCrew.map(member => {
-                  const index = crew.indexOf(member);
-
-                  return `
-                    <label class="scenario-person">
-                      <input type="checkbox" value="${index}">
-                      <span>${getFullDisplayName(member)} - ${member.section}</span>
-                    </label>
-                  `;
-                }).join("")
-          }
-        </div>
-
-        <button class="primary-btn scenario-btn" onclick="runScenario()">
-          Run Availability Scenario
-        </button>
-      </div>
-
-      <div class="panel">
-        <h3>Mission Crew Generators</h3>
-        <p class="member-notes">
-          Generate administrative crews from available PORT, STBD, and Day Worker personnel.
-        </p>
-
-        <button class="primary-btn scenario-btn" onclick="generateSkeletonCrew()">
-          Skeleton Crew
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="generateSarCrew()">
-          SAR Crew
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="generatePursuitCrew()">
-          Pursuit Crew
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="generateRandomCrew()">
-          Random Crew
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="showMissionPackageBuilder()">
-          Mission Package Builder
-        </button>
-
-        <button class="secondary-btn scenario-btn" onclick="showSavedMissionPackages()">
-          Saved Mission Packages
-        </button>
-      </div>
-
-      <div class="panel">
-        <h3>Training Crew Generator</h3>
-        <p class="member-notes">
-          Build a training crew with mentors and break-ins when available.
-        </p>
-
-        <label>Training Type</label>
-        <select id="trainingType">
-          <option>Boat Crew Training</option>
-          <option>Engineer Training</option>
-          <option>Boarding Team Training</option>
-          <option>Pursuit Training</option>
-        </select>
-
-        <button class="primary-btn scenario-btn" onclick="generateTrainingCrew()">
-          Generate Training Crew
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="showMultiAssetMission()">
-          Multi-Asset Mission Planner
-        </button>
-
-        <button class="secondary-btn scenario-btn" onclick="renderScenarioBuilder()">
-          Reset Scenario Builder
-        </button>
-      </div>
-
-      <div class="panel scenario-results-panel">
-        <h3>Scenario Results</h3>
-        <div id="scenarioResult">
-          Choose a scenario or crew generator to view results.
-        </div>
-      </div>
-
-    </section>
-  `;
-}
-
-function checkReadinessFromList(sectionName, crewList) {
-  const members = sortMembers(crewList.filter(member =>
-    member.section === sectionName &&
-    member.status === "Available"
-  ));
-
-  const missing = [];
-
-  readinessRequirements.forEach(req => {
-    const hasRequirement = members.some(member => memberHasQual(member, req));
-
-    if (!hasRequirement) {
-      missing.push(req);
-    }
-  });
-
-  return {
-    section: sectionName,
-    ready: missing.length === 0,
-    missing,
-    members
-  };
-}
-
-function getDayWorkerOptionsFromList(requiredQual, crewList) {
-  return sortMembers(crewList.filter(member =>
-    member.section === "Day Worker" &&
-    member.status === "Available" &&
-    memberHasQual(member, requiredQual)
-  ));
-}
-
-window.runScenario = function() {
-  const selectedInputs = [...document.querySelectorAll(".scenario-person input:checked")];
-
-  if (selectedInputs.length === 0) {
-    alert("Select at least one affected member.");
+  if (!pkg) {
     return;
   }
 
-  const temporaryStatus = document.getElementById("scenarioStatus").value;
+  const dutyDate = safeValue("plannedCrewDutyDate");
 
-  const simulatedCrew = JSON.parse(JSON.stringify(crew));
-  const affectedMembers = [];
-
-  selectedInputs.forEach(input => {
-    const originalIndex = Number(input.value);
-
-    if (!simulatedCrew[originalIndex]) return;
-
-    simulatedCrew[originalIndex].status = temporaryStatus;
-    affectedMembers.push(simulatedCrew[originalIndex]);
-  });
-
-  const portResult = checkReadinessFromList("PORT", simulatedCrew);
-  const stbdResult = checkReadinessFromList("STBD", simulatedCrew);
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Availability Scenario Applied</h4>
-      <p><strong>Temporary Status:</strong> ${temporaryStatus}</p>
-
-      <p><strong>Affected Personnel:</strong></p>
-      <ul>
-        ${affectedMembers.map(member => `
-          <li>${getFullDisplayName(member)} - ${member.section}</li>
-        `).join("")}
-      </ul>
-    </div>
-
-    ${renderScenarioReadinessResult(portResult, simulatedCrew)}
-    ${renderScenarioReadinessResult(stbdResult, simulatedCrew)}
-  `;
-};
-
-window.generateSkeletonCrew = function() {
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
-
-  const requiredRoles = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
-
-  const selectedCrew = [];
-  const filledRoles = {};
-
-  function canFillRole(member, role) {
-    if (role === "PCX") {
-      return memberHasQual(member, "PCX") || memberHasQual(member, "CX");
-    }
-
-    return memberHasQual(member, role);
+  if (!dutyDate) {
+    const dateInput = document.getElementById("plannedCrewDutyDate");
+    if (dateInput) dateInput.focus();
+    return;
   }
 
-  requiredRoles.forEach(role => {
-    const candidate = availableCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      canFillRole(member, role)
-    );
+  const plannedCrew = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionType: pkg.missionType,
+    asset: pkg.asset,
+    crew: pkg.crew,
+    notes: pkg.notes,
+    checklistHTML: pkg.checklistHTML,
+    dutyDate
+  };
 
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    }
-  });
+  plannedCrews.push(plannedCrew);
+  savePlannedCrews();
 
-  const missingRoles = requiredRoles.filter(role => !filledRoles[role]);
+  pendingPlannedCrewPackageId = null;
 
+  const box = document.getElementById("plannedCrewDateBox");
+  if (box) box.remove();
+
+  document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+    <div class="scenario-summary no-print">
+      <strong>Saved as planned crew for ${dutyDate}.</strong>
+    </div>
+  `);
+};
+
+window.cancelSavePlannedCrew = function() {
+  pendingPlannedCrewPackageId = null;
+
+  const box = document.getElementById("plannedCrewDateBox");
+  if (box) box.remove();
+};
+
+window.showSavedMissionPackages = function() {
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
-      <h4>Skeleton Crew Generator</h4>
-      <p>
-        Watch Keeper attempted to build a bare-minimum crew using available PORT, STBD, and Day Worker personnel.
-      </p>
+      <h4>Saved Mission Packages</h4>
+      <p>View, print, or delete saved mission packages.</p>
     </div>
 
     ${
-      missingRoles.length === 0
-        ? `<div class="scenario-readiness ready-panel">
-            <h4>Skeleton Crew Found</h4>
-            <ul>
-              ${requiredRoles.map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("")}
-            </ul>
-          </div>`
-        : `<div class="scenario-readiness not-ready-panel">
-            <h4>Skeleton Crew Incomplete</h4>
+      missionPackages.length === 0
+        ? `<p class="empty-text">No saved mission packages.</p>`
+        : missionPackages
+            .slice()
+            .reverse()
+            .map(pkg => `
+              <div class="member-card">
+                <div class="member-header">
+                  <div>
+                    <h4>${pkg.missionType} - ${pkg.asset.name}</h4>
+                    <p>${new Date(pkg.createdAt).toLocaleString()}</p>
+                    <p>${pkg.asset.type} | ${pkg.asset.status}</p>
+                  </div>
 
-            <p>Filled Roles:</p>
-            <ul>
-              ${Object.keys(filledRoles).map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("") || "<li>No roles filled.</li>"}
-            </ul>
-
-            <p>Missing Roles:</p>
-            <div class="qual-row">
-              ${missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
-            </div>
-          </div>`
+                  <div class="member-actions">
+                    <button class="action-btn" onclick="viewMissionPackage(${pkg.id})">View</button>
+                    <button class="action-btn delete-btn" onclick="deleteMissionPackage(${pkg.id})">Delete</button>
+                  </div>
+                </div>
+              </div>
+            `).join("")
     }
   `;
 };
 
-window.generateSarCrew = function() {
-  const assetCheck = getAssetForMission("SAR");  
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
+window.viewMissionPackage = function(id) {
+  const pkg = missionPackages.find(item => item.id === id);
+  if (!pkg) return;
 
-  const selectedCrew = [];
-  const filledRoles = {};
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report printable-report">
+      <h3>Watch Keeper Mission Package</h3>
 
-  function selectMember(role, condition) {
-    const candidate = availableCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      condition(member)
-    );
+      <div class="scenario-summary">
+        <p><strong>Mission Type:</strong> ${pkg.missionType}</p>
+        <p><strong>Asset:</strong> ${pkg.asset.name} - ${pkg.asset.type} - ${pkg.asset.status}</p>
+        <p><strong>Created:</strong> ${new Date(pkg.createdAt).toLocaleString()}</p>
+      </div>
 
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    }
-  }
+      <div class="scenario-summary">
+        <h4>Crew Assignment</h4>
+        <ul>
+          ${pkg.crew.map(item => `
+            <li>
+              <strong>${item.role}:</strong>
+              ${getFullDisplayName(item.member)}
+            </li>
+          `).join("")}
+        </ul>
+      </div>
 
-  selectMember("Coxswain", member =>
-    memberHasQual(member, "PCX") || memberHasQual(member, "CX")
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p>${pkg.notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+        ${pkg.checklistHTML}
+      </div>
+
+      <button class="primary-btn scenario-btn no-print" onclick="window.print()">
+        Print Mission Package
+      </button>
+
+      <button class="secondary-btn scenario-btn no-print" onclick="showSavedMissionPackages()">
+        Back to Saved Packages
+      </button>
+    </div>
+  `;
+};
+
+window.deleteMissionPackage = function(id) {
+  missionPackages = missionPackages.filter(pkg => pkg.id !== id);
+  saveMissionPackages();
+  showSavedMissionPackages();
+};
+
+// ---------- Multi-Asset Planner ----------
+window.showMultiAssetPlanner = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
   );
-
-  selectMember("Engineer", member =>
-    memberHasQual(member, "ENG")
-  );
-
-  selectMember("Boarding / Crew Support", member =>
-    memberHasQual(member, "BO") || memberHasQual(member, "BTM")
-  );
-
-  selectMember("Additional Crew", member =>
-    memberHasQual(member, "CR") ||
-    memberHasQual(member, "BTM") ||
-    memberHasQual(member, "BO") ||
-    memberHasQual(member, "ENG") ||
-    memberHasQual(member, "CX") ||
-    memberHasQual(member, "PCX")
-  );
-
-  const requiredRoles = [
-    "Coxswain",
-    "Engineer",
-    "Boarding / Crew Support",
-    "Additional Crew"
-  ];
-
-  const missingRoles = requiredRoles.filter(role => !filledRoles[role]);
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
-      <h4>SAR Crew Generator</h4>
-      <p>
-        Watch Keeper attempted to build a SAR crew using available PORT, STBD, and Day Worker personnel.
-      </p>
-
-      <p><strong>Asset Check:</strong> %{assetCheck.message}</p>
+      <h4>Multi-Asset Mission Planner</h4>
+      <p>Select which FMC/PMC assets to include in the mission.</p>
     </div>
 
     ${
-      missingRoles.length === 0
-        ? `<div class="scenario-readiness ready-panel">
-            <h4>SAR Crew Found</h4>
-            <ul>
-              ${requiredRoles.map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("")}
-            </ul>
-          </div>`
-        : `<div class="scenario-readiness not-ready-panel">
-            <h4>SAR Crew Incomplete</h4>
+      missionAssets.length === 0
+        ? `
+          <div class="scenario-readiness not-ready-panel">
+            <p>No FMC or PMC assets are available.</p>
+          </div>
+        `
+        : `
+          <div class="scenario-personnel-list compact">
+            ${missionAssets.map((asset, index) => `
+              <label class="scenario-person">
+                <input type="checkbox" class="mission-asset-check" value="${index}">
+                <span>
+                  ${asset.name} - ${asset.type} - ${asset.status}
+                  ${asset.status === "PMC" ? `(${asset.pmcDescription || "No PMC description"})` : ""}
+                </span>
+              </label>
+            `).join("")}
+          </div>
 
-            <p>Filled Roles:</p>
-            <ul>
-              ${Object.keys(filledRoles).map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("") || "<li>No roles filled.</li>"}
-            </ul>
-
-            <p>Missing Roles:</p>
-            <div class="qual-row">
-              ${missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
-            </div>
-          </div>`
+          <button class="primary-btn scenario-btn" onclick="runSelectedMultiAssetMission()">
+            Run Multi-Asset Mission
+          </button>
+        `
     }
   `;
 };
 
-window.generatePursuitCrew = function() {
-  const assetCheck = getAssetForMission("Pursuit");
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
+window.runSelectedMultiAssetMission = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
 
-  const selectedCrew = [];
-  const filledRoles = {};
+  const selectedIndexes = [...document.querySelectorAll(".mission-asset-check:checked")]
+    .map(input => Number(input.value));
 
-  function selectMember(role, condition) {
-    const candidate = availableCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      condition(member)
-    );
-
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    }
+  if (selectedIndexes.length === 0) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select at least one asset.</p>
+      </div>
+    `);
+    return;
   }
 
-  selectMember("Pursuit Coxswain", member =>
-    memberHasQual(member, "PCX")
-  );
-
-  selectMember("Pursuit Gunner", member =>
-    memberHasQual(member, "PG")
-  );
-
-  selectMember("Engineer", member =>
-    memberHasQual(member, "ENG")
-  );
-
-  selectMember("Boarding / Crew Support", member =>
-    memberHasQual(member, "BO") || memberHasQual(member, "BTM")
-  );
-
-  selectMember("Additional Crew", member =>
-    memberHasQual(member, "CR") ||
-    memberHasQual(member, "BTM") ||
-    memberHasQual(member, "BO") ||
-    memberHasQual(member, "ENG") ||
-    memberHasQual(member, "CX") ||
-    memberHasQual(member, "PCX")
-  );
-
-  const requiredRoles = [
-    "Pursuit Coxswain",
-    "Pursuit Gunner",
-    "Engineer",
-    "Boarding / Crew Support",
-    "Additional Crew"
-  ];
-
-  const missingRoles = requiredRoles.filter(role => !filledRoles[role]);
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Pursuit Crew Generator</h4>
-      <p>
-        Watch Keeper attempted to build a pursuit-capable crew using available PORT, STBD, and Day Worker personnel.
-      </p>
-      <p><strong>Asset Check:</strong> ${assetCheck.message}</p>
-    </div>
-
-    ${
-      missingRoles.length === 0
-        ? `<div class="scenario-readiness ready-panel">
-            <h4>Pursuit Crew Found</h4>
-            <ul>
-              ${requiredRoles.map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("")}
-            </ul>
-          </div>`
-        : `<div class="scenario-readiness not-ready-panel">
-            <h4>Pursuit Crew Incomplete</h4>
-
-            <p>Filled Roles:</p>
-            <ul>
-              ${Object.keys(filledRoles).map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("") || "<li>No roles filled.</li>"}
-            </ul>
-
-            <p>Missing Roles:</p>
-            <div class="qual-row">
-              ${missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
-            </div>
-          </div>`
-    }
-  `;
+  const selectedAssets = selectedIndexes.map(index => missionAssets[index]);
+  generateMultiAssetMission(selectedAssets);
 };
-
-window.generateRandomCrew = function() {
-  const availableCrew = crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  );
-
-  const shuffledCrew = [...availableCrew].sort(() => Math.random() - 0.5);
-
-  const selectedCrew = [];
-  const filledRoles = {};
-
-  function selectRandomMember(role, condition) {
-    const candidate = shuffledCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      condition(member)
-    );
-
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    }
-  }
-
-  selectRandomMember("Coxswain", member =>
-    memberHasQual(member, "PCX") || memberHasQual(member, "CX")
-  );
-
-  selectRandomMember("Engineer", member =>
-    memberHasQual(member, "ENG")
-  );
-
-  selectRandomMember("Boarding / Crew Support", member =>
-    memberHasQual(member, "BO") || memberHasQual(member, "BTM")
-  );
-
-  selectRandomMember("Additional Crew", member =>
-    memberHasQual(member, "CR") ||
-    memberHasQual(member, "BTM") ||
-    memberHasQual(member, "BO") ||
-    memberHasQual(member, "ENG") ||
-    memberHasQual(member, "CX") ||
-    memberHasQual(member, "PCX")
-  );
-
-  const requiredRoles = [
-    "Coxswain",
-    "Engineer",
-    "Boarding / Crew Support",
-    "Additional Crew"
-  ];
-
-  const missingRoles = requiredRoles.filter(role => !filledRoles[role]);
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Random Crew Generator</h4>
-      <p>
-        Watch Keeper randomly selected a crew from available PORT, STBD, and Day Worker personnel.
-      </p>
-    </div>
-
-    ${
-      missingRoles.length === 0
-        ? `<div class="scenario-readiness ready-panel">
-            <h4>Random Crew Found</h4>
-            <ul>
-              ${requiredRoles.map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("")}
-            </ul>
-          </div>`
-        : `<div class="scenario-readiness not-ready-panel">
-            <h4>Random Crew Incomplete</h4>
-
-            <p>Filled Roles:</p>
-            <ul>
-              ${Object.keys(filledRoles).map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("") || "<li>No roles filled.</li>"}
-            </ul>
-
-            <p>Missing Roles:</p>
-            <div class="qual-row">
-              ${missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
-            </div>
-          </div>`
-    }
-  `;
-};
-
-window.generateTrainingCrew = function() {
-  const trainingType = document.getElementById("trainingType").value;
-
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
-
-  const breakIns = availableCrew.filter(member =>
-    memberHasQual(member, "B/I")
-  );
-
-  const selectedCrew = [];
-  const filledRoles = {};
-
-  function selectMember(role, condition) {
-    const candidate = availableCrew.find(member =>
-      !selectedCrew.includes(member) &&
-      condition(member)
-    );
-
-    if (candidate) {
-      selectedCrew.push(candidate);
-      filledRoles[role] = candidate;
-    }
-  }
-
-  if (trainingType === "Boat Crew Training") {
-    selectMember("Mentor / Coxswain", member =>
-      memberHasQual(member, "PCX") || memberHasQual(member, "CX")
-    );
-
-    selectMember("Break-In / Trainee", member =>
-      breakIns.includes(member)
-    );
-
-    selectMember("Engineer", member =>
-      memberHasQual(member, "ENG")
-    );
-
-    selectMember("Additional Crew", member =>
-      memberHasQual(member, "CR") ||
-      memberHasQual(member, "BTM") ||
-      memberHasQual(member, "BO") ||
-      memberHasQual(member, "ENG") ||
-      memberHasQual(member, "CX") ||
-      memberHasQual(member, "PCX")
-    );
-  }
-
-  if (trainingType === "Engineer Training") {
-    selectMember("Engineer Mentor", member =>
-      memberHasQual(member, "ENG")
-    );
-
-    selectMember("Break-In / Trainee", member =>
-      breakIns.includes(member)
-    );
-
-    selectMember("Coxswain", member =>
-      memberHasQual(member, "PCX") || memberHasQual(member, "CX")
-    );
-
-    selectMember("Additional Crew", member =>
-      memberHasQual(member, "CR") ||
-      memberHasQual(member, "BTM") ||
-      memberHasQual(member, "BO") ||
-      memberHasQual(member, "CX") ||
-      memberHasQual(member, "PCX")
-    );
-  }
-
-  if (trainingType === "Boarding Team Training") {
-    selectMember("Boarding Mentor", member =>
-      memberHasQual(member, "BO") || memberHasQual(member, "BTM")
-    );
-
-    selectMember("Break-In / Trainee", member =>
-      breakIns.includes(member)
-    );
-
-    selectMember("Coxswain", member =>
-      memberHasQual(member, "PCX") || memberHasQual(member, "CX")
-    );
-
-    selectMember("Engineer", member =>
-      memberHasQual(member, "ENG")
-    );
-  }
-
-  if (trainingType === "Pursuit Training") {
-    selectMember("Pursuit Coxswain Mentor", member =>
-      memberHasQual(member, "PCX")
-    );
-
-    selectMember("Pursuit Gunner Mentor", member =>
-      memberHasQual(member, "PG")
-    );
-
-    selectMember("Break-In / Trainee", member =>
-      breakIns.includes(member)
-    );
-
-    selectMember("Engineer", member =>
-      memberHasQual(member, "ENG")
-    );
-
-    selectMember("Additional Crew", member =>
-      memberHasQual(member, "CR") ||
-      memberHasQual(member, "BTM") ||
-      memberHasQual(member, "BO") ||
-      memberHasQual(member, "CX") ||
-      memberHasQual(member, "PCX")
-    );
-  }
 
 window.generateMultiAssetMission = function(selectedAssets = null) {
   const missionAssets = selectedAssets || assets.filter(asset =>
@@ -2156,15 +3915,7 @@ window.generateMultiAssetMission = function(selectedAssets = null) {
     return;
   }
 
-  const availableCrew = sortMembers(crew.filter(member =>
-    member.status === "Available" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
-  ));
-
+  const availableCrew = getAvailableCrewForGenerators();
   const assignedMembers = [];
   const assetCrews = [];
 
@@ -2209,6 +3960,10 @@ window.generateMultiAssetMission = function(selectedAssets = null) {
       const member = selectMember(candidate => {
         if (role === "CX") {
           return memberHasQual(candidate, "PCX") || memberHasQual(candidate, "CX");
+        }
+
+        if (role === "CR") {
+          return memberHasQual(candidate, "CR");
         }
 
         return memberHasQual(candidate, role);
@@ -2276,699 +4031,119 @@ window.generateMultiAssetMission = function(selectedAssets = null) {
   `;
 };
 
-window.showMultiAssetPlanner = function() {
-  const missionAssets = assets.filter(asset =>
-    asset.status === "FMC" || asset.status === "PMC"
-  );
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Multi-Asset Mission Planner</h4>
-      <p>Select which FMC/PMC assets to include in the mission.</p>
-    </div>
-
-    ${
-      missionAssets.length === 0
-        ? `
-          <div class="scenario-readiness not-ready-panel">
-            <p>No FMC or PMC assets are available.</p>
-          </div>
-        `
-        : `
-          <div class="scenario-personnel-list compact">
-            ${missionAssets.map((asset, index) => `
-              <label class="scenario-person">
-                <input type="checkbox" class="mission-asset-check" value="${index}">
-                <span>
-                  ${asset.name} - ${asset.type} - ${asset.status}
-                  ${asset.status === "PMC" ? `(${asset.pmcDescription || "No PMC description"})` : ""}
-                </span>
-              </label>
-            `).join("")}
-          </div>
-
-          <button class="primary-btn scenario-btn" onclick="runSelectedMultiAssetMission()">
-            Run Multi-Asset Mission
-          </button>
-        `
-    }
-  `;
-};
-
-window.runSelectedMultiAssetMission = function() {
-  const missionAssets = assets.filter(asset =>
-    asset.status === "FMC" || asset.status === "PMC"
-  );
-
-  const selectedIndexes = [...document.querySelectorAll(".mission-asset-check:checked")]
-    .map(input => Number(input.value));
-
-  if (selectedIndexes.length === 0) {
-    alert("Select at least one asset.");
-    return;
-  }
-
-  const selectedAssets = selectedIndexes.map(index => missionAssets[index]);
-
-  generateMultiAssetMission(selectedAssets);
-};
-
-  missionAssets.forEach(asset => {
-    const requiredCrewSize = Number(asset.crewSize || 4);
-    const missionProfile = asset.missionProfile || "SAR";
-
-    const roles = [];
-
-    if (missionProfile === "Pursuit" && asset.pursuit === "Yes") {
-      roles.push("PCX", "PG", "ENG", "BO");
-    } else if (missionProfile === "LE Boarding") {
-      roles.push("CX", "ENG", "BO", "BTM");
-    } else {
-      roles.push("CX", "ENG", "BO", "CR");
-    }
-
-    while (roles.length < requiredCrewSize) {
-      roles.push("CR");
-    }
-
-    const filledRoles = {};
-    const missingRoles = [];
-
-    roles.forEach(role => {
-      const member = selectMember(candidate => {
-        if (role === "CX") {
-          return memberHasQual(candidate, "PCX") || memberHasQual(candidate, "CX");
-        }
-
-        return memberHasQual(candidate, role);
-      });
-
-      if (member) {
-        filledRoles[role] = member;
-      } else {
-        missingRoles.push(role);
-      }
-    });
-
-    assetCrews.push({
-      asset,
-      missionProfile,
-      filledRoles,
-      missingRoles
-    });
-});
-
-document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>Multi-Asset Mission Planner</h4>
-      <p>
-        Watch Keeper attempted to crew all FMC/PMC assets without assigning the same member twice.
-      </p>
-    </div>
-
-    ${assetCrews.map(result => `
-      <div class="scenario-readiness ${result.missingRoles.length === 0 ? "ready-panel" : "not-ready-panel"}">
-        <h4>${result.asset.name} - ${result.asset.type}</h4>
-
-        <p>
-          <strong>Status:</strong> ${result.asset.status}
-          ${result.asset.status === "PMC" ? ` - ${result.asset.pmcDescription || "No PMC description provided"}` : ""}
-        </p>
-
-        <p><strong>Mission Profile:</strong> ${result.missionProfile}</p>
-
-        <p><strong>Crew Assignment:</strong></p>
-
-        <ul>
-          ${
-            Object.keys(result.filledRoles).map(role => `
-              <li>
-                <strong>${role}:</strong>
-                ${getFullDisplayName(result.filledRoles[role])}
-              </li>
-            `).join("") || "<li>No roles filled.</li>"
-          }
-        </ul>
-
-        ${
-          result.missingRoles.length === 0
-            ? `<p class="member-notes">All required roles filled.</p>`
-            : `
-              <p><strong>Missing Roles:</strong></p>
-              <div class="qual-row">
-                ${result.missingRoles.map(role => `<span class="badge missing-badge">${role}</span>`).join("")}
-              </div>
-            `
-        }
-      </div>
-    `).join("")}
-  `;
-}
-
-function renderTrainingScenarioResult(trainingType, filledRoles) {
-  const requiredRoles = Object.keys(filledRoles);
-  const missingTrainingPiece = !filledRoles["Break-In / Trainee"];
-
-  document.getElementById("scenarioResult").innerHTML = `
-    <div class="scenario-summary">
-      <h4>${trainingType}</h4>
-      <p>
-        Watch Keeper generated a training crew using available PORT, STBD, and Day Worker personnel.
-      </p>
-    </div>
-
-    <div class="scenario-readiness ${missingTrainingPiece ? "not-ready-panel" : "ready-panel"}">
-      <h4>Training Crew ${missingTrainingPiece ? "Needs Review" : "Found"}</h4>
-
-      ${
-        requiredRoles.length === 0
-          ? `<p>No suitable personnel found.</p>`
-          : `
-            <ul>
-              ${requiredRoles.map(role => `
-                <li>
-                  <strong>${role}:</strong>
-                  ${getFullDisplayName(filledRoles[role])}
-                </li>
-              `).join("")}
-            </ul>
-          `
-      }
-
-      ${
-        missingTrainingPiece
-          ? `<p class="member-notes">No B/I member was found for this training scenario.</p>`
-          : `<p class="member-notes">Training crew includes a B/I member.</p>`
-      }
-    </div>
-  `;
-}
-
-function renderScenarioReadinessResult(result, crewList) {
-  return `
-    <div class="scenario-readiness ${result.ready ? "ready-panel" : "not-ready-panel"}">
-      <h4>${result.section} Section</h4>
-
-      <p>
-        <strong>${result.ready ? "MISSION CAPABLE" : "NOT MISSION CAPABLE"}</strong>
-      </p>
-
-      ${
-        result.ready
-          ? `<p>No missing minimum qualifications.</p>`
-          : `
-            <p>Missing:</p>
-
-            <div class="qual-row">
-              ${result.missing.map(req => `<span class="badge missing-badge">${req}</span>`).join("")}
-            </div>
-
-            <p>Day Worker Standby Options:</p>
-
-            <ul>
-              ${
-                result.missing.map(req => {
-                  const options = getDayWorkerOptionsFromList(req, crewList);
-
-                  if (options.length === 0) {
-                    return `<li>${req}: No available Day Worker found.</li>`;
-                  }
-
-                  return `<li>${req}: ${options.map(member => getFullDisplayName(member)).join(", ")}</li>`;
-                }).join("")
-              }
-            </ul>
-          `
-      }
-    </div>
-  `;
-};
-
+// ---------- Settings ----------
 function renderSettings() {
   pageTitle.textContent = "Settings";
-  pageSubtitle.textContent = "Manage Watch Keeper data";
+  pageSubtitle.textContent = "Manage duty rotation and saved Watch Keeper data";
 
   content.innerHTML = `
-  <div class="panel">
-    <h3>Personnel Data</h3>
-    <p>Export a backup, import a saved roster, print reports, or wipe all personnel from this device.</p>
+    <section class="dashboard-grid">
+      <div class="panel">
+        <h3>Duty Rotation Settings</h3>
 
-    <button class="primary-btn settings-btn" onclick="exportRosterBackup()">
-      Export Roster Backup
-    </button>
+        <label>Current Duty Section</label>
+        <select id="rotationCurrentSection">
+          <option ${rotationSettings.currentSection === "PORT" ? "selected" : ""}>PORT</option>
+          <option ${rotationSettings.currentSection === "STBD" ? "selected" : ""}>STBD</option>
+        </select>
 
-    <button class="secondary-btn settings-btn" onclick="triggerRosterImport()">
-      Import Roster Backup
-    </button>
+        <label>Current Duty Start Date</label>
+        <input id="rotationStartDate" type="date" value="${rotationSettings.dutyStartDate}">
 
-    <button class="primary-btn settings-btn" onclick="window.print()">
-      Print Current View
-    </button>
+        <label>Duty Pattern</label>
+        <select id="rotationPattern">
+          <option ${rotationSettings.pattern === "2-on-2-off" ? "selected" : ""}>2-on-2-off</option>
+        </select>
 
-    <button class="action-btn delete-btn settings-btn" onclick="wipeAllPersonnel()">
-      Wipe All Personnel
-    </button>
-  </div>
-`;
+        <button class="primary-btn settings-btn" onclick="saveDutyRotationSettings()">
+          Save Duty Rotation
+        </button>
+      </div>
+
+      <div class="panel">
+        <h3>Personnel Data</h3>
+
+        <p class="member-notes">
+          This removes all saved personnel from this device only.
+        </p>
+
+        <button class="danger-btn settings-btn" onclick="wipeAllPersonnel()">
+          Wipe All Saved Personnel
+        </button>
+      </div>
+
+      <div class="panel">
+        <h3>Mission Package Data</h3>
+
+        <p class="member-notes">
+          This removes saved mission packages and planned crews from this device only.
+        </p>
+
+        <button class="danger-btn settings-btn" onclick="wipeMissionData()">
+          Wipe Mission Package Data
+        </button>
+      </div>
+    </section>
+  `;
 }
 
-window.exportRosterBackup = function() {
-  const backupData = {
-    app: "Watch Keeper",
-    version: "1.0",
-    exportedAt: new Date().toISOString(),
-    crew
-  };
+window.saveDutyRotationSettings = function() {
+  rotationSettings.currentSection = safeValue("rotationCurrentSection", "PORT");
+  rotationSettings.dutyStartDate = safeValue("rotationStartDate", new Date().toISOString().slice(0, 10));
+  rotationSettings.pattern = safeValue("rotationPattern", "2-on-2-off");
 
-  const fileData = JSON.stringify(backupData, null, 2);
-  const blob = new Blob([fileData], { type: "application/json" });
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-
-  link.href = url;
-  link.download = `watch-keeper-backup-${new Date().toISOString().slice(0, 10)}.json`;
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
+  saveRotationSettings();
+  dashboardSectionView = null;
+  renderSettings();
 };
-
-window.triggerRosterImport = function() {
-  document.getElementById("importRosterInput").click();
-};
-
-document.getElementById("importRosterInput").addEventListener("change", function(event) {
-  const file = event.target.files[0];
-
-  if (!file) return;
-
-  const reader = new FileReader();
-
-  reader.onload = function(e) {
-    try {
-      const importedData = JSON.parse(e.target.result);
-
-      if (!importedData.crew || !Array.isArray(importedData.crew)) {
-        alert("Invalid Watch Keeper backup file.");
-        return;
-      }
-
-      const confirmImport = confirm(
-        "Importing this backup will replace your current saved roster. Continue?"
-      );
-
-      if (!confirmImport) return;
-
-      crew = importedData.crew;
-      saveCrew();
-      renderSettings();
-
-      alert("Roster backup imported successfully.");
-    } catch (error) {
-      alert("Could not read backup file.");
-    }
-  };
-
-  reader.readAsText(file);
-
-  event.target.value = "";
-});
 
 window.wipeAllPersonnel = function() {
-  const confirmOne = confirm("This will permanently delete all saved personnel. Continue?");
-  if (!confirmOne) return;
-
-  const confirmTwo = confirm("Are you absolutely sure? This cannot be undone.");
-  if (!confirmTwo) return;
-
   crew = [];
   saveCrew();
   renderSettings();
-
-  alert("All personnel have been wiped.");
 };
 
-function renderPlaceholder(title, subtitle) {
-  pageTitle.textContent = title;
-  pageSubtitle.textContent = subtitle;
-
-  content.innerHTML = `
-    <div class="panel">
-      <h3>${title}</h3>
-      <p>This section will be built next.</p>
-    </div>
-  `;
-}
-
-function renderAssets() {
-  const summary = getAssetSummary();
-  const sortedAssets = sortAssetsByType(assets);
-
-  pageTitle.textContent = "Assets";
-  pageSubtitle.textContent = "Small boat asset roster";
-
-  content.innerHTML = `
-    <section class="cards">
-      <div class="card">
-        <p>Total Assets</p>
-        <h3>${summary.total}</h3>
-      </div>
-
-      <div class="card ready">
-        <p>FMC</p>
-        <h3>${summary.fmc}</h3>
-      </div>
-
-      <div class="card warning">
-        <p>PMC</p>
-        <h3>${summary.pmc}</h3>
-      </div>
-
-      <div class="card not-ready-panel">
-        <p>NMC</p>
-        <h3>${summary.nmc}</h3>
-      </div>
-    </section>
-
-    <div class="panel">
-      <h3>Pursuit Capable Assets: ${summary.pursuit}</h3>
-    </div>
-
-    <section class="roster-grid">
-      ${
-        sortedAssets.length === 0
-          ? `<div class="panel wide"><p class="empty-text">No assets added.</p></div>`
-          : sortedAssets.map(asset => {
-                const index = assets.indexOf(asset);
-
-                 return `
-              <div class="member-card">
-                <div class="member-header">
-                  <div>
-                    <h4>${asset.name}</h4>
-                    <p>${asset.type} | ${getAssetStatusBadge(asset.status)}</p>
-                    <p>Pursuit Capable: ${asset.pursuit}</p>
-                    <p>Crew Size: ${asset.crewSize || "4"}</p>
-                    <p>Mission Profile: ${asset.missionProfile || "SAR"}</p>
-                  </div>
-
-                  <div class="member-actions">
-                    <button class="action-btn" onclick="editAsset(${index})">Edit</button>
-                    <button class="action-btn delete-btn" onclick="deleteAsset(${index})">Delete</button>
-                  </div>
-                </div>
-
-                ${
-                  asset.status === "PMC" && asset.pmcDescription
-                    ? `<p class="member-notes"><strong>PMC:</strong> ${asset.pmcDescription}</p>`
-                    : ""
-                }
-
-                ${asset.notes ? `<p class="member-notes">${asset.notes}</p>` : ""}
-              </div>
-            `;
-        }).join("")
-      }
-    </section>
-  `;
-}
-
-window.addAsset = function() {
-  const name = document.getElementById("assetName").value.trim();
-  const type = document.getElementById("assetType").value;
-  const pursuit = document.getElementById("assetPursuit").value;
-  const crewSize = document.getElementById("assetCrewSize").value;
-  const missionProfile = document.getElementById("assetMissionProfile").value;
-  const status = document.getElementById("assetStatus").value;
-  const pmcDescription = document.getElementById("assetPmcDescription").value.trim();
-  const notes = document.getElementById("assetNotes").value.trim();
-
-  if (!name) {
-    alert("Enter an asset name or hull number.");
-    return;
-  }
-
-  const assetData = {
-    name,
-    type,
-    pursuit,
-    crewSize,
-    missionProfile,
-    status,
-    pmcDescription,
-    notes
-  };
-
-  if (editingAssetIndex === null) {
-    assets.push(assetData);
-  } else {
-    assets[editingAssetIndex] = assetData;
-  }
-
-  saveAssets();
-  assetModal.classList.add("hidden");
-  clearAssetModal();
-  renderAssets();
+window.wipeMissionData = function() {
+  missionPackages = [];
+  plannedCrews = [];
+  saveMissionPackages();
+  savePlannedCrews();
+  renderSettings();
 };
 
-function clearAssetModal() {
-  editingAssetIndex = null;
-
-  assetModalTitle.textContent = "Add Asset";
-
-  document.getElementById("assetName").value = "";
-  document.getElementById("assetType").value = "45 RB-M";
-  document.getElementById("assetPursuit").value = "Yes";
-  document.getElementById("assetCrewSize").value = "4";
-  document.getElementById("assetMissionProfile").value = "SAR";
-  document.getElementById("assetStatus").value = "FMC";
-  document.getElementById("assetPmcDescription").value = "";
-  document.getElementById("assetNotes").value = "";
-  document.getElementById("pmcBox").classList.add("hidden");
-}
-
-function getAssetStatusBadge(status) {
-  return `<span class="asset-status-badge ${status}">${status}</span>`;
-}
-
-function getAssetSummary() {
-  return {
-    total: assets.length,
-    fmc: assets.filter(asset => asset.status === "FMC").length,
-    pmc: assets.filter(asset => asset.status === "PMC").length,
-    nmc: assets.filter(asset => asset.status === "NMC").length,
-    pursuit: assets.filter(asset => asset.pursuit === "Yes").length
-  };
-}
-
-document.getElementById("assetStatus").addEventListener("change", () => {
-  const status = document.getElementById("assetStatus").value;
-  document.getElementById("pmcBox").classList.toggle("hidden", status !== "PMC");
-});
-
-document.getElementById("closeAssetModal").addEventListener("click", () => {
-  assetModal.classList.add("hidden");
-});
-
-document.getElementById("saveAsset").addEventListener("click", addAsset);
-
-window.deleteAsset = function(index) {
-  const confirmDelete = confirm(`Delete asset ${assets[index].name}?`);
-
-  if (!confirmDelete) return;
-
-  assets.splice(index, 1);
-  saveAssets();
-  renderAssets();
-};
-
-window.editAsset = function(index) {
-  editingAssetIndex = index;
-
-  const asset = assets[index];
-
-  assetModalTitle.textContent = "Edit Asset";
-
-  document.getElementById("assetName").value = asset.name || "";
-  document.getElementById("assetType").value = asset.type || "45 RB-M";
-  document.getElementById("assetPursuit").value = asset.pursuit || "Yes";
-  document.getElementById("assetCrewSize").value = asset.crewSize || "4";
-  document.getElementById("assetMissionProfile").value = asset.missionProfile || "SAR";
-  document.getElementById("assetStatus").value = asset.status || "FMC";
-  document.getElementById("assetPmcDescription").value = asset.pmcDescription || "";
-  document.getElementById("assetNotes").value = asset.notes || "";
-
-  document.getElementById("pmcBox").classList.toggle("hidden", asset.status !== "PMC");
-
-  assetModal.classList.remove("hidden");
-
-  const modalCard = assetModal.querySelector(".modal-card");
-  modalCard.scrollTop = 0;
-};
-
-function clearModal() {
-  editingIndex = null;
-
-  modalTitle.textContent = "Add Crew Member";
-
-  document.getElementById("memberRank").value = "";
-  document.getElementById("memberFirstName").value = "";
-  document.getElementById("memberMiddleInitial").value = "";
-  document.getElementById("memberLastName").value = "";
-
-  document.getElementById("memberTitle").value = "None";
-  document.getElementById("customTitle").value = "";
-  document.getElementById("memberDept").value = "Deck";
-  document.getElementById("memberSection").value = "PORT";
-  document.getElementById("memberStatus").value = "Available";
-  document.getElementById("memberNotes").value = "";
-  document.getElementById("customCollateral").value = "";
-  document.getElementById("lossDate").value = "";
-  document.getElementById("lossReason").value = "None";
-
-  modalSmartResult.classList.add("hidden");
-  modalSmartResult.innerHTML = "";
-
-  document.querySelectorAll(".checks input").forEach(input => {
-    input.checked = false;
-  });
-}
-
-function closeMemberModal() {
-  modal.classList.add("hidden");
-  clearModal();
-
-  const modalCard = document.querySelector(".modal-card");
-  modalCard.scrollTop = 0;
-}
-
-setTimeout(() => {
-    document.getElementById("memberRank").focus();
-}, 50);
-
-window.editMember = function(index) {
-  editingIndex = index;
-
-  const member = crew[index];
-
-  modalTitle.textContent = "Edit Crew Member";
-
-  document.getElementById("memberRank").value = member.rank || "";
-  document.getElementById("memberFirstName").value = member.firstName || "";
-  document.getElementById("memberMiddleInitial").value = member.middleInitial || "";
-  document.getElementById("memberLastName").value = member.lastName || "";
-
-  document.getElementById("memberDept").value = member.dept || "Deck";
-  document.getElementById("memberSection").value = member.section || "PORT";
-  document.getElementById("memberStatus").value = member.status || "Available";
-  document.getElementById("memberNotes").value = member.notes || "";
-  document.getElementById("lossDate").value = member.lossDate || "";
-  document.getElementById("lossReason").value = member.lossReason || "None";
-
-  const standardTitles = ["CO", "XPO", "EPO", "AEPO", "1LT", "OPS", "TPO", "MAA", "HAZMAT"];
-
-  if (member.title && standardTitles.includes(member.title)) {
-    document.getElementById("memberTitle").value = member.title;
-    document.getElementById("customTitle").value = "";
-  } else if (member.title) {
-    document.getElementById("memberTitle").value = "Custom";
-    document.getElementById("customTitle").value = member.title;
-  } else {
-    document.getElementById("memberTitle").value = "None";
-    document.getElementById("customTitle").value = "";
-  }
-
-  document.querySelectorAll(".checks input").forEach(input => {
-    const quals = member.quals || [];
-    const collaterals = member.collaterals || [];
-
-    input.checked = quals.includes(input.value) || collaterals.includes(input.value);
-  });
-
-  document.getElementById("customCollateral").value = "";
-
-  modalSmartResult.classList.add("hidden");
-  modalSmartResult.innerHTML = "";
-
-  modal.classList.remove("hidden");
-};
-
-window.deleteMember = function(index) {
-  const confirmDelete = confirm(`Delete ${getFullDisplayName(crew[index])}?`);
-
-  if (!confirmDelete) return;
-
-  crew.splice(index, 1);
-  saveCrew();
-  renderCrewRoster();
-};
-
-document.querySelectorAll(".nav-btn").forEach(button => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll(".nav-btn").forEach(btn => {
-      btn.classList.remove("active");
-    });
-
-    button.classList.add("active");
-
-    const page = button.dataset.page;
-
-    updateTopbarButton(page);
-
-    if (page === "dashboard") renderDashboard();
-    if (page === "crew") renderCrewRoster();
-    if (page === "assets") renderAssets();
-    if (page === "sections") renderDutySections();
-    if (page === "readiness") renderReadinessCheck();
-    if (page === "scenarios") renderScenarioBuilder();
-    if (page === "smart-settings") renderSmartAssignmentSettings();
-    if (page === "settings") renderSettings();
-  });
-});
-
-document.getElementById("openAddMember").addEventListener("click", () => {
-  clearModal();
-  modal.classList.remove("hidden");
-
-  const modalCard = document.querySelector(".modal-card");
-  modalCard.scrollTop = 0;
-});
-
-document.getElementById("closeModal").addEventListener("click", closeMemberModal);
-
-document.getElementById("smartAssignBtn").addEventListener("click", runModalSmartAssignment);
-
-document.getElementById("saveMember").addEventListener("click", () => {
-  const rank = document.getElementById("memberRank").value.trim();
-  const firstName = document.getElementById("memberFirstName").value.trim();
-  const middleInitial = document.getElementById("memberMiddleInitial").value.trim().replace(".", "");
-  const lastName = document.getElementById("memberLastName").value.trim();
-
+// ---------- Save Member ----------
+function saveMemberFromModal() {
+  const rank = safeValue("memberRank").trim();
+  const firstName = safeValue("memberFirstName").trim();
+  const middleInitial = safeValue("memberMiddleInitial").trim().replace(".", "");
+  const lastName = safeValue("memberLastName").trim();
   const title = getMemberTitle();
-  const dept = document.getElementById("memberDept").value;
-  const section = document.getElementById("memberSection").value;
-  const status = document.getElementById("memberStatus").value;
-  const notes = document.getElementById("memberNotes").value.trim();
-  const quals = getSelectedModalQuals();
-  const collaterals = getSelectedModalCollaterals();
-  const lossDate = document.getElementById("lossDate").value;
-  const lossReason = document.getElementById("lossReason").value;
+  const dept = safeValue("memberDept", "Deck");
+  const section = safeValue("memberSection", "PORT");
+  const status = safeValue("memberStatus", "Available");
+  const lossDate = safeValue("lossDate");
+  const lossReason = safeValue("lossReason", "None");
+  const notes = safeValue("memberNotes").trim();
+  const emplid = safeValue("memberEmplid").trim();
+  const arrivalDate = safeValue("memberArrivalDate");
+  const swapDate = safeValue("memberSwapDate");
 
-  if (!rank || !firstName || !lastName) {
-    alert("Enter rank, first name, and last name.");
+  let quals = getSelectedModalQuals();
+  const collaterals = getSelectedModalCollaterals();
+
+  if (quals.includes("PCX")) {
+    quals = quals.filter(q => q !== "CX");
+  }
+
+  if (!rank || !lastName) {
+    showMemberError("Enter at least rank and last name.", "memberRank");
     return;
   }
 
   if (isDuplicateMember(rank, firstName, middleInitial, lastName, editingIndex)) {
-    alert("This person already appears to be in the roster.");
-    setTimeout(() => {
-      document.getElementById("memberRank").focus();
-   }, 50);
-  return;
-}
+    showMemberError("This person already appears to be in the roster.", "memberRank");
+    return;
+  }
 
   const memberData = {
     rank,
@@ -2983,7 +4158,13 @@ document.getElementById("saveMember").addEventListener("click", () => {
     collaterals,
     lossDate,
     lossReason,
-    notes
+    emplid,
+    arrivalDate,
+    swapDate,
+    notes,
+    notesHistory: editingIndex !== null
+    ? (crew[editingIndex].notesHistory || [])
+    : [],
   };
 
   if (editingIndex === null) {
@@ -2994,27 +4175,106 @@ document.getElementById("saveMember").addEventListener("click", () => {
 
   saveCrew();
   closeMemberModal();
-  renderCrewRoster();
-});
 
-document.querySelectorAll('.checks input[value="PCX"]').forEach(pcxBox => {
-  pcxBox.addEventListener("change", () => {
-    if (pcxBox.checked) {
-      document.querySelectorAll('.checks input[value="CX"]').forEach(cxBox => {
-        cxBox.checked = false;
+  const activePage = document.querySelector(".nav-btn.active")?.dataset.page || "dashboard";
+
+  if (activePage === "crew") {
+    renderCrewRoster();
+  } else {
+    renderDashboard();
+  }
+}
+
+// ---------- Event Listeners ----------
+function setupEventListeners() {
+  document.querySelectorAll(".nav-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const page = button.dataset.page;
+
+      document.querySelectorAll(".nav-btn").forEach(btn => {
+        btn.classList.remove("active");
       });
-    }
-  });
-});
 
-document.querySelectorAll('.checks input[value="CX"]').forEach(cxBox => {
-  cxBox.addEventListener("change", () => {
-    if (cxBox.checked) {
-      document.querySelectorAll('.checks input[value="PCX"]').forEach(pcxBox => {
-        pcxBox.checked = false;
-      });
-    }
-  });
-});
+      button.classList.add("active");
+      updateTopbarButton(page);
 
+      if (page === "dashboard") renderDashboard();
+      if (page === "crew") renderCrewRoster();
+      if (page === "worklist") renderWorkList();
+      if (page === "assets") renderAssets();
+      if (page === "sections") renderDutySections();
+      if (page === "readiness") renderReadinessCheck();
+      if (page === "scenarios") renderScenarioBuilder();
+      if (page === "qualifications") renderQualifications();
+      if (page === "smart-settings") renderSmartAssignmentSettings();
+      if (page === "settings") renderSettings();
+      if (page === "calendar") renderCalendar();
+    });
+  });
+
+  if (topbarButton) {
+    topbarButton.onclick = openMemberModal;
+  }
+
+  const closeMemberButton = document.getElementById("closeModal");
+  if (closeMemberButton) {
+    closeMemberButton.addEventListener("click", closeMemberModal);
+  }
+
+  const saveMemberButton = document.getElementById("saveMember");
+  if (saveMemberButton) {
+    saveMemberButton.addEventListener("click", saveMemberFromModal);
+  }
+
+  const smartAssignButton = document.getElementById("smartAssignButton");
+  if (smartAssignButton) {
+    smartAssignButton.addEventListener("click", runModalSmartAssignment);
+  }
+
+  const closeAssetButton = document.getElementById("closeAssetModal");
+  if (closeAssetButton) {
+    closeAssetButton.addEventListener("click", closeAssetModal);
+  }
+
+  const saveAssetButton = document.getElementById("saveAsset");
+  if (saveAssetButton) {
+    saveAssetButton.addEventListener("click", addAsset);
+  }
+
+  const assetStatus = document.getElementById("assetStatus");
+  if (assetStatus) {
+    assetStatus.addEventListener("change", () => {
+      const status = safeValue("assetStatus", "FMC");
+      if (status === "PMC") {
+        showElement("pmcBox");
+      } else {
+        hideElement("pmcBox");
+      }
+    });
+  }
+
+  document.querySelectorAll('.checks input[value="PCX"]').forEach(pcxBox => {
+    pcxBox.addEventListener("change", () => {
+      if (pcxBox.checked) {
+        document.querySelectorAll('.checks input[value="CX"]').forEach(cxBox => {
+          cxBox.checked = false;
+        });
+      }
+    });
+  });
+
+  document.querySelectorAll('.checks input[value="CX"]').forEach(cxBox => {
+    cxBox.addEventListener("change", () => {
+      if (cxBox.checked) {
+        document.querySelectorAll('.checks input[value="PCX"]').forEach(pcxBox => {
+          pcxBox.checked = false;
+        });
+      }
+    });
+  });
+}
+
+// ---------- Initial Load ----------
+setupEventListeners();
+updateTopbarButton("dashboard");
 renderDashboard();
