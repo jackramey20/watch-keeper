@@ -84,6 +84,13 @@ nav {
   margin-bottom: 26px;
 }
 
+.topbar-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    align-items: center;
+}
+
 .topbar h2 {
   margin: 0;
   font-size: 32px;
@@ -1199,6 +1206,20 @@ details[open] summary {
 
 @media (max-width: 900px) {
   .mission-crew-review-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.batch-add-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 70px 1fr 150px 160px auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 1000px) {
+  .batch-add-row {
     grid-template-columns: 1fr;
   }
 }
