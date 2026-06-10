@@ -369,20 +369,59 @@ function closeAssetModal() {
 function updateTopbarButton(page) {
   if (!topbarButton) return;
 
-  if (page === "dashboard" || page === "crew") {
+  if (page === "dashboard") {
     topbarButton.style.display = "block";
     topbarButton.textContent = "+ Add Member";
     topbarButton.onclick = openMemberModal;
-  } else if (page === "assets") {
+  } else if (page === "crew") {
     topbarButton.style.display = "block";
-    topbarButton.textContent = "+ Add Asset";
-    topbarButton.onclick = openAssetModal;
-  } else {
-    topbarButton.style.display = "none";
-    topbarButton.onclick = null;
+    topbarButton.textContent = "+ Add Member";
+    topbarButton.onclick = openMemberModal;
+
+    setTimeout(() => addBatchTopbarButton(), 50);
   }
 }
 
+function addBatchTopbarButton() {
+  if (document.getElementById("openBatchAdd")) return;
+
+  const button = document.createElement("button");
+  button.id = "openBatchAdd";
+  button.className = "secondary-btn";
+  button.textContent = "Batch Add";
+  button.onclick = showBatchAddPanel;
+
+  topbarButton.insertAdjacentElement("afterend", button);
+}
+
+window.showBatchAddPanel = function() {
+  if (document.getElementById("batchAddPanel")) return;
+  content.insertAdjacentHTML("afterbegin", `
+    <div class="panel wide" id="batchAddPanel">
+      <h3>Batch Add Personnel</h3>
+
+      <p class="member-notes">
+        Add multiple personnel quickly. Rank and last name are required.
+      </p>
+
+      ${renderBatchAddRows()}
+
+      <div class="dashboard-date-actions">
+        <button class="secondary-btn" onclick="addBatchAddRow()">
+          Add Row
+        </button>
+
+        <button class="primary-btn" onclick="saveBatchPersonnel()">
+          Save All
+        </button>
+
+        <button class="delete-btn" onclick="document.getElementById('batchAddPanel').remove()">
+          Close
+        </button>
+      </div>
+    </div>
+  `);
+};
 // ---------- Rotation ----------
 function getCurrentDutySection() {
   return getDutySectionForDate(getLocalDateString());
@@ -1061,6 +1100,49 @@ function getMemberTitle() {
   return title;
 }
 
+function renderBatchAddRows() {
+  return `
+    <div id="batchAddRows">
+      ${renderBatchAddRow()}
+    </div>
+  `;
+}
+
+function renderBatchAddRow() {
+  return `
+    <div class="batch-add-row">
+      <input class="batch-rank" placeholder="Rank">
+
+      <input class="batch-first" placeholder="First">
+
+      <input class="batch-mi" placeholder="MI">
+
+      <input class="batch-last" placeholder="Last">
+
+      <select class="batch-section">
+        <option>PORT</option>
+        <option>STBD</option>
+        <option>Day Worker</option>
+        <option>Reservist</option>
+        <option>TDY to Station</option>
+      </select>
+
+      <select class="batch-dept">
+        <option>Deck</option>
+        <option>Engineering</option>
+        <option>Law Enforcement</option>
+        <option>Command</option>
+        <option>Galley</option>
+        <option>Other</option>
+      </select>
+
+      <button class="delete-btn" onclick="this.closest('.batch-add-row').remove()">
+        Remove
+      </button>
+    </div>
+  `;
+}
+
 function renderCrewRoster() {
   pageTitle.textContent = "Crew Roster";
   pageSubtitle.textContent = "Personnel grouped by section and sorted by rank";
@@ -1074,6 +1156,7 @@ function renderCrewRoster() {
   ];
 
   content.innerHTML = `
+
     <section class="roster-grid">
       ${groups.map(group => {
         const members = getGroup(group.value);
@@ -1160,6 +1243,66 @@ window.addPersonnelNote = function(index) {
   saveCrew();
 
   viewPersonnelDetails(index);
+};
+
+window.addBatchAddRow = function() {
+  const container = document.getElementById("batchAddRows");
+
+  if (!container) return;
+
+  container.insertAdjacentHTML("beforeend", renderBatchAddRow());
+};
+
+window.saveBatchPersonnel = function() {
+  const rows = [...document.querySelectorAll(".batch-add-row")];
+
+  let addedCount = 0;
+  let skippedCount = 0;
+
+  rows.forEach(row => {
+    const rank = row.querySelector(".batch-rank").value.trim();
+    const firstName = row.querySelector(".batch-first").value.trim();
+    const middleInitial = row.querySelector(".batch-mi").value.trim().replace(".", "");
+    const lastName = row.querySelector(".batch-last").value.trim();
+    const section = row.querySelector(".batch-section").value;
+    const dept = row.querySelector(".batch-dept").value;
+
+    if (!rank || !lastName) {
+      skippedCount++;
+      return;
+    }
+
+    if (isDuplicateMember(rank, firstName, middleInitial, lastName, null)) {
+      skippedCount++;
+      return;
+    }
+
+    crew.push({
+      rank,
+      firstName,
+      middleInitial,
+      lastName,
+      title: "",
+      dept,
+      section,
+      status: "Available",
+      quals: [],
+      collaterals: [],
+      lossDate: "",
+      lossReason: "None",
+      notes: "",
+      notesHistory: [],
+      trackQualifications: false,
+      trackedQuals: []
+    });
+
+    addedCount++;
+  });
+
+  saveCrew();
+  renderCrewRoster();
+
+  alert(`Batch add complete. Added: ${addedCount}. Skipped: ${skippedCount}.`);
 };
 
 window.viewPersonnelDetails = function(index) {
@@ -6096,7 +6239,7 @@ window.wipeMissionData = function() {
 };
 
 // ---------- Save Member ----------
-function saveMemberFromModal() {
+function saveMemberFromModal(keepOpen = false) {
   const rank = safeValue("memberRank").trim();
   const firstName = safeValue("memberFirstName").trim();
   const middleInitial = safeValue("memberMiddleInitial").trim().replace(".", "");
@@ -6158,14 +6301,16 @@ function saveMemberFromModal() {
   }
 
   saveCrew();
-  closeMemberModal();
 
-  const activePage = document.querySelector(".nav-btn.active")?.dataset.page || "dashboard";
+  if (keepOpen) {
+    clearModal();
+    modal.classList.remove("hidden");
 
-  if (activePage === "crew") {
-    renderCrewRoster();
+    setTimeout(() => {
+      document.getElementById("memberRank").focus();
+    }, 100);
   } else {
-    renderDashboard();
+    closeMemberModal();
   }
 }
 
@@ -6208,8 +6353,18 @@ function setupEventListeners() {
 
   const saveMemberButton = document.getElementById("saveMember");
   if (saveMemberButton) {
-    saveMemberButton.addEventListener("click", saveMemberFromModal);
+    saveMemberButton.addEventListener("click", () => {
+      saveMemberFromModal(false);
+    });
   }
+
+  const saveAndAddAnotherButton = document.getElementById("saveAndAddAnother");
+  if (saveAndAddAnotherButton) {
+    saveAndAddAnotherButton.addEventListener("click", () => {
+      saveMemberFromModal(true);
+    });
+  }
+
 
   const smartAssignButton = document.getElementById("smartAssignButton");
   if (smartAssignButton) {
