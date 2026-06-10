@@ -7,16 +7,21 @@
 let editingIndex = null;
 let editingAssetIndex = null;
 let pendingPlannedCrewPackageId = null;
+let openQualificationMemberId = null;
 
 let crew = JSON.parse(localStorage.getItem("watchKeeperCrew")) || [];
 let assets = JSON.parse(localStorage.getItem("watchKeeperAssets")) || [];
 let missionPackages = JSON.parse(localStorage.getItem("watchKeeperMissionPackages")) || [];
 let plannedCrews = JSON.parse(localStorage.getItem("watchKeeperPlannedCrews")) || [];
 let dutyOverrides = JSON.parse(localStorage.getItem("watchKeeperDutyOverrides")) || {};
+let leaveItems =
+  JSON.parse(localStorage.getItem("watchKeeperLeaveItems"))
+  || [];
 
 let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 let qualificationFilter = "All";
+let workListFilter = "All";
 
 let workItems =
   JSON.parse(localStorage.getItem("watchKeeperWorkItems"))
@@ -56,7 +61,8 @@ let smartSettings = JSON.parse(localStorage.getItem("watchKeeperSmartSettings"))
 };
 
 let dashboardSectionView = null;
-let dashboardDutyDate = new Date().toISOString().slice(0, 10);
+let dashboardDutyDate = getLocalDateString();
+let selectedLeaveDate = getLocalDateString();
 
 // ---------- DOM References ----------
 const content = document.getElementById("content");
@@ -119,6 +125,13 @@ function saveWorkItems() {
   localStorage.setItem(
     "watchKeeperWorkItems",
     JSON.stringify(workItems)
+  );
+}
+
+function saveLeaveItems() {
+  localStorage.setItem(
+    "watchKeeperLeaveItems",
+    JSON.stringify(leaveItems)
   );
 }
 
@@ -372,23 +385,32 @@ function updateTopbarButton(page) {
 
 // ---------- Rotation ----------
 function getCurrentDutySection() {
-  return getDutySectionForDate(new Date().toISOString().slice(0, 10));
+  return getDutySectionForDate(getLocalDateString());
 }
 
 function changeDashboardDutyDate(days) {
   const currentDate = new Date(dashboardDutyDate);
   currentDate.setDate(currentDate.getDate() + days);
-  dashboardDutyDate = currentDate.toISOString().slice(0, 10);
+  dashboardDutyDate = getLocalDateString(currentDate);
   renderDashboard();
 }
 
 function resetDashboardDutyDate() {
-  dashboardDutyDate = new Date().toISOString().slice(0, 10);
+  dashboardDutyDate = getLocalDateString();
   renderDashboard();
 }
 
 function getDisplayedPlannedCrews() {
   return plannedCrews.filter(plan => plan.dutyDate === dashboardDutyDate);
+}
+
+function getPrimarySarCrewForDashboard() {
+  const crews = getDisplayedPlannedCrews();
+
+  return crews.find(plan =>
+    plan.missionType === "Standby SAR Crew" ||
+    plan.missionType === "SAR Crew"
+  );
 }
 
 function getPlannedCrewsForDate(dateString) {
@@ -421,6 +443,32 @@ function getDutySectionForDate(dateString) {
     : "PORT";
 }
 
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getPrettyDateTime(dateString) {
+  const date = new Date(`${dateString}T12:00:00`);
+
+  const prettyDate = date.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  });
+
+  const prettyTime = new Date().toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  });
+
+  return `${prettyDate} | ${prettyTime}`;
+}
+
 // ---------- Dashboard ----------
 function getDashboardQuals(member) {
   const quals = [];
@@ -447,14 +495,22 @@ function getDashboardDisplay(member) {
 
   if (member.title) pieces.push(member.title);
 
-  if (member.qualificationStatus) {
-    pieces.push(member.qualificationStatus);
+  const trackedQualProblem = getMemberTrackedQuals(member)
+    .map(item => getSingleTrackedQualStatus(item))
+    .find(status => status.isProblem);
+
+  if (trackedQualProblem) {
+    pieces.push(trackedQualProblem.label);
   }
 
   const quals = getDashboardQuals(member);
   if (quals) pieces.push(quals);
 
   return pieces.join(" - ");
+}
+
+function getMemberIndex(member) {
+  return crew.indexOf(member);
 }
 
 function getUpcomingLosses() {
@@ -478,14 +534,16 @@ function getUpcomingLosses() {
 }
 
 function renderDashboard() {
-  const currentDutySection = getCurrentDutySection();
-
+  const currentDutySection = getDutySectionForDate(dashboardDutyDate);
   const portCrew = getGroup("PORT");
   const stbdCrew = getGroup("STBD");
   const upcomingLosses = getUpcomingLosses();
   const displayedPlannedCrews = getDisplayedPlannedCrews();
   const workSummary = getWorkSummary();
   const topWorkItems = getTopOpenWorkItems();
+  const dashboardSarCrew = getPrimarySarCrewForDashboard();
+  const leaveSummary = getLeaveSummaryForDashboardDate();
+  const leaveConflicts = getPlannedCrewLeaveConflictsForDate(dashboardDutyDate);
 
   pageTitle.textContent = "Dashboard";
   pageSubtitle.textContent = "Current duty section overview";
@@ -493,9 +551,17 @@ function renderDashboard() {
   content.innerHTML = `
     <section class="dashboard-grid">
       <div class="panel wide">
-        <h2>Duty Section: ${currentDutySection}</h2>
-        <p>Displayed Duty Date: ${dashboardDutyDate}</p>
-        <p>Rotation Pattern: ${rotationSettings.pattern}</p>
+        <div class="dashboard-date-card">
+          <p class="dashboard-date-label">CURRENT DASHBOARD VIEW</p>
+
+          <h2>${getPrettyDateTime(dashboardDutyDate)}</h2>
+
+          <p>
+            <strong>Duty Section:</strong> ${currentDutySection}
+            |
+            <strong>Rotation:</strong> ${rotationSettings.pattern}
+          </p>
+        </div>
 
         <div class="dashboard-date-actions">
           <button class="secondary-btn" onclick="changeDashboardDutyDate(-1)">Previous Day</button>
@@ -551,7 +617,10 @@ function renderDashboard() {
                   members.length === 0
                     ? `<li class="dashboard-member">No personnel assigned.</li>`
                     : members.map(member => `
-                        <li class="dashboard-member">
+                        <li
+                          class="dashboard-member clickable-member"
+                          onclick="viewPersonnelDetails(${getMemberIndex(member)})"
+                        >
                           ${getDashboardDisplay(member)}
                         </li>
                       `).join("")
@@ -561,6 +630,65 @@ function renderDashboard() {
           `;
         }).join("")}
 
+      </div>
+
+      <div class="panel wide ${leaveConflicts.length > 0 ? "not-ready-panel" : "ready-panel"}">
+        <h3>Crew Leave Conflict Check</h3>
+
+        ${
+          leaveConflicts.length === 0
+            ? `<p>No planned crew leave conflicts for this date.</p>`
+            : `
+              <p><strong>Leave conflicts detected:</strong></p>
+
+              <ul>
+                ${leaveConflicts.map(conflict => `
+                  <li>
+                    ${conflict.plan.missionType}
+                    -
+                    <strong>${conflict.role}:</strong>
+                    ${getFullDisplayName(conflict.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+        }
+      </div>
+
+      <div class="panel wide">
+        <h3>Today's SAR Crew</h3>
+
+        ${
+          !dashboardSarCrew
+            ? `<p class="empty-text">No SAR crew planned for this duty date.</p>`
+            : `
+              <div class="scenario-summary">
+                <h4>${dashboardSarCrew.asset.name}</h4>
+                <p>${dashboardSarCrew.asset.type} | ${dashboardSarCrew.asset.status}</p>
+
+                <ul>
+                  ${dashboardSarCrew.crew.map(item => {
+                    const memberIndex = crew.indexOf(item.member);
+                    const onLeave = isMemberOnLeaveForDate(memberIndex, dashboardDutyDate);
+
+                    return `
+                      <li>
+                        <strong>${item.role}:</strong>
+                        ${getFullDisplayName(item.member)}
+                        ${
+                          onLeave
+                            ? `<span class="qual-status qual-overdue">ON LEAVE</span>`
+                            : ""
+                        }
+                      </li>
+                    `;
+                  }).join("")}
+                </ul>
+
+                ${dashboardSarCrew.notes ? `<p class="member-notes">${dashboardSarCrew.notes}</p>` : ""}
+              </div>
+            `
+        }
       </div>
 
       <div class="panel wide">
@@ -588,12 +716,22 @@ function renderDashboard() {
                               <p>${plan.asset.type} | ${plan.asset.status}</p>
 
                               <ul>
-                                ${plan.crew.map(item => `
-                                  <li>
-                                    <strong>${item.role}:</strong>
-                                    ${getFullDisplayName(item.member)}
-                                  </li>
-                                `).join("")}
+                                ${plan.crew.map(item => {
+                                  const memberIndex = crew.indexOf(item.member);
+                                  const onLeave = isMemberOnLeaveForDate(memberIndex, dashboardDutyDate);
+
+                                  return `
+                                    <li>
+                                      <strong>${item.role}:</strong>
+                                      ${getFullDisplayName(item.member)}
+                                      ${
+                                        onLeave
+                                          ? `<span class="qual-status qual-overdue">ON LEAVE</span>`
+                                          : ""
+                                      }
+                                    </li>
+                                  `;
+                                }).join("")}
                               </ul>
 
                               ${plan.notes ? `<p class="member-notes">${plan.notes}</p>` : ""}
@@ -650,6 +788,31 @@ function renderDashboard() {
       </div>
 
       <div class="panel wide">
+        <h3>Leave / TDY for ${dashboardDutyDate}</h3>
+
+        ${
+          leaveSummary.total === 0
+            ? `<p class="empty-text">No leave, TDY, school, or medical entries for this date.</p>`
+            : `
+              <ul>
+                ${leaveSummary.items.map(item => {
+                  const member = crew[item.memberIndex];
+
+                  return `
+                    <li>
+                      ${renderLeaveImpact(item)}
+                      <strong>${member ? getFullDisplayName(member) : "Unknown Member"}</strong>
+                      - ${item.leaveType}
+                      (${item.startDate} to ${item.endDate})
+                    </li>
+                  `;
+                }).join("")}
+              </ul>
+            `
+        }
+      </div>
+
+      <div class="panel wide">
         <h3>Future Loss Warnings</h3>
 
         ${
@@ -658,7 +821,10 @@ function renderDashboard() {
             : `
               <ul>
                 ${upcomingLosses.map(item => `
-                  <li>
+                  <li
+                    class="dashboard-member clickable-member"
+                    onclick="viewPersonnelDetails(${getMemberIndex(item.member)})"
+                  >
                     ${getFullDisplayName(item.member)}
                     - ${item.member.lossReason}
                     in ${item.daysUntil} days
@@ -1030,6 +1196,46 @@ window.viewPersonnelDetails = function(index) {
           }
         </div>
 
+        <h4>Tracked Break-Ins</h4>
+
+        ${
+          member.trackedQuals && member.trackedQuals.length > 0
+            ? member.trackedQuals.map(item => {
+                const status = getSingleTrackedQualStatus(item);
+
+                return `
+                  <div class="member-card">
+                    <h4>${item.qual}</h4>
+
+                    <p class="${status.className}">
+                      ${status.label}
+                    </p>
+
+                    <p>
+                      <strong>Due Date:</strong>
+                      ${item.dueDate || "No date listed"}
+                    </p>
+                  </div>
+                `;
+              }).join("")
+            : `<p class="empty-text">No tracked break-ins.</p>`
+        }
+
+        ${
+          member.trackQualifications
+            ? `
+              <button class="secondary-btn" onclick="removeMemberFromQualificationTracking(${index})">
+                Remove from Qualification Tracking
+              </button>
+            `
+            : `
+              <button class="primary-btn" onclick="addMemberToQualificationTracking(${index})">
+                Add to Qualification Tracking
+              </button>
+            `
+        }
+      </div>
+
         <h4>Qualification Due Dates</h4>
 
         ${
@@ -1146,6 +1352,20 @@ window.viewPersonnelDetails = function(index) {
         <p><strong>Projected Loss Reason:</strong> ${member.lossReason || "None"}</p>
         <p><strong>Projected Loss Date:</strong> ${member.lossDate || "Not listed"}</p>
       </div>
+
+      ${
+        member.trackQualifications
+          ? `
+            <button class="secondary-btn" onclick="removeMemberFromQualificationTracking(${index})">
+              Remove from Qualification Tracking
+            </button>
+          `
+          : `
+            <button class="primary-btn" onclick="addMemberToQualificationTracking(${index})">
+              Add to Qualification Tracking
+            </button>
+          `
+      }
 
       <div class="panel wide">
         <button class="primary-btn" onclick="editMember(${index})">
@@ -1266,6 +1486,28 @@ function renderWorkList() {
         </button>
       </div>
 
+      <div class="panel wide">
+        <h3>Filter</h3>
+
+        <div class="dashboard-date-actions">
+          <button class="${workListFilter === "All" ? "primary-btn" : "secondary-btn"}" onclick="setWorkListFilter('All')">
+            All
+          </button>
+
+          <button class="${workListFilter === "Open" ? "primary-btn" : "secondary-btn"}" onclick="setWorkListFilter('Open')">
+            Open
+          </button>
+
+          <button class="${workListFilter === "Completed" ? "primary-btn" : "secondary-btn"}" onclick="setWorkListFilter('Completed')">
+            Completed
+          </button>
+
+          <button class="${workListFilter === "Overdue" ? "primary-btn" : "secondary-btn"}" onclick="setWorkListFilter('Overdue')">
+            Overdue
+          </button>
+        </div>
+      </div>
+
       ${renderWorkSection("Engineering", ["Engineering - Maintenance", "Engineering - Repairs"])}
       ${renderWorkSection("Deck", ["Deck - Maintenance", "Deck - Repairs"])}
       ${renderWorkSection("Facilities", ["Facilities - Maintenance", "Facilities - Repairs"])}
@@ -1280,6 +1522,10 @@ function renderWorkList() {
           Delete Selected Tasks
         </button>
       </div>
+
+      <button class="delete-btn" onclick="deleteCompletedWorkItems()">
+        Delete All Completed Tasks
+      </button>
 
     </section>
   `;
@@ -1342,48 +1588,64 @@ function renderSingleWorkCategory(category) {
 }
 
 function renderWorkItemsForCategory(category) {
-  const items = workItems.filter(item => item.category === category);
-
+  const items = workItems.filter(item =>
+    item.category === category &&
+    workItemMatchesFilter(item)
+  );
   if (items.length === 0) {
     return `<p class="empty-text">No tasks.</p>`;
   }
 
   return items.map(item => `
     <div class="work-item ${item.completed ? "work-completed" : ""}">
-      
-      <div class="work-task-line">
-        <label class="work-task-left">
-          <input
-            type="checkbox"
-            ${item.completed ? "checked" : ""}
-            onchange="toggleWorkComplete(${item.id})"
-          >
 
-          <span>
-            <strong>${item.title}</strong>
-            ${item.completed ? `<span class="qual-status qual-current">DONE</span>` : ""}
-          </span>
-        </label>
+      <div class="work-row">
 
-        <label class="work-delete-right">
+        <input
+          type="checkbox"
+          ${item.completed ? "checked" : ""}
+          onchange="toggleWorkComplete(${item.id})"
+        >
+
+        <span class="work-task-title">
+          ${item.title}
+          ${item.completed ? `<span class="qual-status qual-current">DONE</span>` : ""}
+        </span>
+
+        <span class="work-assigned">
+          Assigned: ${item.assigned || "Unassigned"}
+        </span>
+
+        <span class="work-due">
+          ${item.dueDate ? `Due: ${item.dueDate}` : "No Due Date"}
+        </span>
+
+        <label class="work-delete">
           <input
             type="checkbox"
             class="work-delete-check"
             value="${item.id}"
           >
-          <span>Delete</span>
+          Delete
         </label>
+
       </div>
 
-      <p class="member-notes work-meta">
-        Assigned: ${item.assigned || "Unassigned"}
-        ${item.dueDate ? ` | Due: ${item.dueDate}` : ""}
-      </p>
+      ${
+        item.notes
+          ? `<div class="work-notes">${item.notes}</div>`
+          : ""
+      }
 
-      ${item.notes ? `<p class="work-notes">${item.notes}</p>` : ""}
     </div>
   `).join("");
 }
+
+window.deleteCompletedWorkItems = function() {
+  workItems = workItems.filter(item => !item.completed);
+  saveWorkItems();
+  renderWorkList();
+};
 
 window.addWorkItem = function() {
   const title = document.getElementById("workTitle").value.trim();
@@ -1426,6 +1688,32 @@ window.deleteSelectedWorkItems = function() {
 
   workItems = workItems.filter(item => !selectedIds.includes(item.id));
   saveWorkItems();
+  renderWorkList();
+};
+
+function isWorkItemOverdue(item) {
+  if (item.completed || !item.dueDate) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const due = new Date(item.dueDate);
+  due.setHours(0, 0, 0, 0);
+
+  return due < today;
+}
+
+function workItemMatchesFilter(item) {
+  if (workListFilter === "All") return true;
+  if (workListFilter === "Open") return !item.completed;
+  if (workListFilter === "Completed") return item.completed;
+  if (workListFilter === "Overdue") return isWorkItemOverdue(item);
+
+  return true;
+}
+
+window.setWorkListFilter = function(filter) {
+  workListFilter = filter;
   renderWorkList();
 };
 
@@ -2167,55 +2455,37 @@ function getAssetForMission(missionType) {
 }
 
 // ---------- Scenario Builder ----------
+
 function renderScenarioBuilder() {
-  pageTitle.textContent = "Scenario Builder";
-  pageSubtitle.textContent = "Choose a planning tool";
+  pageTitle.textContent = "Missions";
+  pageSubtitle.textContent = "Mission planning, patrol planning, and print tools";
 
   content.innerHTML = `
     <section class="scenario-layout">
       <div class="panel">
-        <h3>Scenario Tools</h3>
-        <p class="member-notes">
-          Select a planning tool. Each tool opens in the scenario workspace below.
-        </p>
+        <h3>Mission Tools</h3>
 
-        <button class="primary-btn scenario-btn" onclick="showAvailabilityScenarioPanel()">
-          Availability Scenario
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="showCrewGeneratorPanel()">
-          Crew Generator
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="showTrainingScenarioPanel()">
-          Training Crew
+        <button class="primary-btn scenario-btn" onclick="showDailyCrewPlanner()">
+          Daily Duty Patrol Planner
         </button>
 
         <button class="primary-btn scenario-btn" onclick="showMissionPackageBuilder()">
           Mission Package Builder
         </button>
 
-        <button class="primary-btn scenario-btn" onclick="showDailyCrewPlanner()">
-          Daily Duty Crew Planner
-        </button>
-
-        <button class="primary-btn scenario-btn" onclick="showMultiAssetPlanner()">
-          Multi-Asset Mission Planner
-        </button>
-
         <button class="secondary-btn scenario-btn" onclick="showSavedMissionPackages()">
           Saved Mission Packages
         </button>
 
-        <button class="primary-btn scenario-btn" onclick="showPrintCenter()">
+        <button class="secondary-btn scenario-btn" onclick="showPrintCenter()">
           Print Center
         </button>
       </div>
 
       <div class="panel scenario-results-panel">
-        <h3>Scenario Workspace</h3>
+        <h3>Mission Workspace</h3>
         <div id="scenarioResult">
-          Select a scenario tool to begin.
+          Select a mission tool to begin.
         </div>
       </div>
     </section>
@@ -2295,6 +2565,74 @@ function showCrewGeneratorPanel() {
   `;
 }
 
+const trackedQualificationOptions = [
+  "PCXC",
+  "CXC",
+  "Engineer",
+  "Boarding Team Member",
+  "Boat Crewman",
+  "Watchstander",
+  "OOD"
+];
+
+function getMemberTrackedQuals(member) {
+  return member.trackedQuals || [];
+}
+
+function getTrackedQualSummary(member) {
+  const tracked = getMemberTrackedQuals(member);
+
+  if (tracked.length === 0) {
+    return "No active break-ins tracked.";
+  }
+
+  const problem = tracked.find(item =>
+    getSingleTrackedQualStatus(item).isProblem
+  );
+
+  if (problem) {
+    return getSingleTrackedQualStatus(problem).label;
+  }
+
+  return `Breaking in: ${tracked.map(item => item.qual).join(", ")}`;
+}
+
+function getSingleTrackedQualStatus(item) {
+  if (item.status === "ET") {
+    return {
+      label: `ET for ${item.qual}`,
+      className: "qual-problem-text",
+      isProblem: true
+    };
+  }
+
+  if (item.status === "PERFORMANCE PROBATION") {
+    return {
+      label: `Performance probation for ${item.qual}`,
+      className: "qual-problem-text",
+      isProblem: true
+    };
+  }
+
+  if (item.dueDate) {
+    const status = getQualDueStatus(item.dueDate);
+
+    if (status.className === "qual-overdue") {
+      return {
+        label: `OVERDUE for ${item.qual}`,
+        className: "qual-problem-text",
+        isProblem: true
+      };
+    }
+  }
+
+  return {
+    label: `Breaking in: ${item.qual}`,
+    className: "member-notes",
+    isProblem: false
+  };
+}
+
 function showTrainingScenarioPanel() {
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
@@ -2321,24 +2659,33 @@ function showDailyCrewPlanner() {
     asset.status === "FMC" || asset.status === "PMC"
   );
 
+  const missionDate = dashboardDutyDate;
+  const availableCrew = getAvailableCrewForMissionDate(missionDate);
+
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
-      <h4>Daily Duty Crew Planner</h4>
+      <h4>Daily Duty Patrol Planner</h4>
       <p>
-        Create a planned crew for a specific duty date. Saved crews will appear on the Dashboard when that date is selected.
+        Manually build a duty-section patrol, underway, or training crew for a specific duty date.
       </p>
     </div>
 
     <label>Duty Date</label>
     <input id="dailyCrewDate" type="date" value="${dashboardDutyDate}">
 
-    <label>Crew Type</label>
+    <label>Patrol / Underway Type</label>
     <select id="dailyCrewType">
-      <option>Standby SAR Crew</option>
-      <option>Patrol Crew</option>
-      <option>Training Crew</option>
-      <option>Mission Crew</option>
+      <option>ELT-DRUG</option>
+      <option>ELT-MIGRANT</option>
+      <option>RBS</option>
+      <option>Training</option>
     </select>
+
+    <label>Start Time</label>
+    <input id="dailyCrewStartTime" type="time">
+
+    <label>End Time</label>
+    <input id="dailyCrewEndTime" type="time">
 
     <label>Asset</label>
     <select id="dailyCrewAsset">
@@ -2353,14 +2700,131 @@ function showDailyCrewPlanner() {
       }
     </select>
 
-    <label>Notes</label>
-    <textarea id="dailyCrewNotes" placeholder="Example: standby SAR crew, planned patrol, training objective, etc."></textarea>
+    <h4>Crew Assignment</h4>
 
-    <button class="primary-btn scenario-btn" onclick="generateDailyDutyCrewDraft()">
-      Generate Crew Draft
+    <label>Coxswain / PCXC / CXC</label>
+    <select id="dailyCrewCoxswain">
+      ${renderQualifiedCrewOptions("Coxswain", missionDate)}
+    </select>
+
+    <label>Engineer</label>
+    <select id="dailyCrewEngineer">
+      ${renderQualifiedCrewOptions("Engineer", missionDate)}
+    </select>
+
+    <label>Boarding Officer</label>
+    <select id="dailyCrewBO">
+      ${renderQualifiedCrewOptions("BO", missionDate)}
+    </select>
+
+    <label>Boarding Team Member</label>
+    <select id="dailyCrewBTM">
+      ${renderQualifiedCrewOptions("BTM", missionDate)}
+    </select>
+
+    <label>Crewman / Additional Crew</label>
+    <select id="dailyCrewCR">
+      ${renderQualifiedCrewOptions("Crewman", missionDate)}
+    </select>
+
+    <label>Notes</label>
+    <textarea id="dailyCrewNotes" placeholder="Example: required patrol, local RBS, training underway, etc."></textarea>
+
+    <button class="primary-btn scenario-btn" onclick="saveManualDailyDutyCrew()">
+      Save Daily Patrol Crew
     </button>
   `;
 }
+
+window.saveManualDailyDutyCrew = function() {
+  const dutyDate = document.getElementById("dailyCrewDate").value || dashboardDutyDate;
+  const crewType = document.getElementById("dailyCrewType").value;
+  const startTime = document.getElementById("dailyCrewStartTime").value;
+  const endTime = document.getElementById("dailyCrewEndTime").value;
+  const notes = document.getElementById("dailyCrewNotes").value.trim();
+
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAssetIndex = Number(document.getElementById("dailyCrewAsset").value);
+  const selectedAsset = missionAssets[selectedAssetIndex];
+
+  if (!selectedAsset) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select an FMC or PMC asset.</p>
+      </div>
+    `);
+    return;
+  }
+
+  const selectedRoles = [
+    {
+      role: "Coxswain / PCXC / CXC",
+      member: crew[Number(document.getElementById("dailyCrewCoxswain").value)]
+    },
+    {
+      role: "Engineer",
+      member: crew[Number(document.getElementById("dailyCrewEngineer").value)]
+    },
+    {
+      role: "Boarding Officer",
+      member: crew[Number(document.getElementById("dailyCrewBO").value)]
+    },
+    {
+      role: "Boarding Team Member",
+      member: crew[Number(document.getElementById("dailyCrewBTM").value)]
+    },
+    {
+      role: "Crewman / Additional Crew",
+      member: crew[Number(document.getElementById("dailyCrewCR").value)]
+    }
+  ].filter(item => item.member);
+
+  const leaveConflicts = selectedRoles.filter(item => {
+    const memberIndex = crew.indexOf(item.member);
+    return isMemberOnLeaveForDate(memberIndex, dutyDate);
+  });
+
+  if (leaveConflicts.length > 0) {
+    const conflictNames = leaveConflicts
+      .map(item => `${item.role}: ${getFullDisplayName(item.member)}`)
+      .join(", ");
+
+    const continueSave = confirm(
+      `Warning: The following assigned crew are on leave for ${dutyDate}: ${conflictNames}. Save anyway?`
+    );
+
+    if (!continueSave) return;
+  }
+
+  const plannedCrew = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionType: crewType,
+    patrolType: crewType,
+    startTime,
+    endTime,
+    asset: selectedAsset,
+    crew: selectedRoles, 
+    notes,
+    checklistHTML: "",
+    dutyDate
+  };
+
+  plannedCrews.push(plannedCrew);
+  savePlannedCrews();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="scenario-readiness ready-panel">
+      <h4>Daily Patrol Crew Saved</h4>
+      <p><strong>${crewType}</strong> saved for ${dutyDate}.</p>
+      <p><strong>Time:</strong> ${startTime || "Not listed"} - ${endTime || "Not listed"}</p>
+      <p>This crew will appear on the Dashboard when that date is selected.</p>
+    </div>
+  `;
+};
 
 function checkReadinessFromList(sectionName, crewList) {
   const members = sortMembers(crewList.filter(member =>
@@ -2431,11 +2895,11 @@ function renderScenarioReadinessResult(result, crewList) {
 
 function renderQualifications() {
   pageTitle.textContent = "Qualifications";
-  pageSubtitle.textContent = "Track qualification due dates and training status";
+  pageSubtitle.textContent = "Track break-ins, due dates, ET, and performance probation";
 
-  const tracked = ["OOD", "WCH", "PCX", "CX", "ENG", "BTM", "CR"];
+  const trackedCrew = getTrackedQualificationCrew();
+  const filteredCrew = trackedCrew.filter(memberMatchesQualificationFilter);
   const summary = getQualificationSummary();
-  const filteredCrew = crew.filter(memberMatchesQualificationFilter);
 
   content.innerHTML = `
     <section class="cards">
@@ -2459,6 +2923,31 @@ function renderQualifications() {
         <h3>${summary.trainingProbation}</h3>
       </div>
     </section>
+
+    <div class="panel wide">
+      <h3>Add Member to Qualification Tracking</h3>
+
+      <label>Select Personnel</label>
+      <select id="qualTrackingMemberSelect">
+        ${
+          crew.filter(member => !member.trackQualifications).length === 0
+            ? `<option value="">All personnel are already being tracked.</option>`
+            : crew.filter(member => !member.trackQualifications).map(member => {
+                const index = crew.indexOf(member);
+
+                return `
+                  <option value="${index}">
+                    ${getFullDisplayName(member)} - ${member.section}
+                  </option>
+                `;
+              }).join("")
+        }
+      </select>
+
+      <button class="primary-btn" onclick="addSelectedMemberToQualificationTracking()">
+        Add to Tracking
+      </button>
+    </div>
 
     <div class="panel wide">
       <h3>Filter</h3>
@@ -2489,49 +2978,34 @@ function renderQualifications() {
     <section class="dashboard-grid">
       ${
         filteredCrew.length === 0
-          ? `<div class="panel wide"><p class="empty-text">No personnel match this filter.</p></div>`
+          ? `<div class="panel wide"><p class="empty-text">No personnel are currently being tracked for qualifications.</p></div>`
           : filteredCrew.map(member => {
               const index = crew.indexOf(member);
+              const isOpen = openQualificationMemberId === index;
+              const summaryText = getTrackedQualSummary(member);
+              const hasProblem = summaryText.includes("OVERDUE") || summaryText.includes("ET") || summaryText.includes("probation");
 
               return `
-                <div class="member-card">
-                  <h4>
-                    ${getFullDisplayName(member)}
-                    ${
-                      memberHasOverdueQual(member)
-                        ? `<span class="qual-status qual-overdue">OVERDUE</span>`
-                        : ""
-                    }
-                  </h4>
+                <div class="panel wide qualification-accordion-card">
+                  <div class="qualification-accordion-header" onclick="toggleQualificationAccordion(${index})">
+                    <div>
+                      <h3>${getFullDisplayName(member)}</h3>
 
-                  <p>${member.section} | ${member.status}</p>
+                      <p class="${hasProblem ? "qual-problem-text" : "member-notes"}">
+                        ${summaryText}
+                      </p>
+                    </div>
 
-                  <label>Qualification Status</label>
-                  <select onchange="updateQualificationStatus(${index}, this.value)">
-                    <option value="" ${!member.qualificationStatus ? "selected" : ""}>None</option>
-                    <option value="ET" ${member.qualificationStatus === "ET" ? "selected" : ""}>ET</option>
-                    <option value="TRAINING PROBATION" ${member.qualificationStatus === "TRAINING PROBATION" ? "selected" : ""}>TRAINING PROBATION</option>
-                  </select>
+                    <button class="secondary-btn">
+                      ${isOpen ? "Close" : "Open"}
+                    </button>
+                  </div>
 
-                  ${tracked.map(qual => {
-                    const status = getQualDueStatus(member.qualDueDates?.[qual]);
-
-                    return `
-                      <div class="qual-date-row">
-                        <label>${qual} Due Date</label>
-
-                        <input
-                          type="date"
-                          value="${member.qualDueDates?.[qual] || ""}"
-                          onchange="updateQualDueDate(${index}, '${qual}', this.value)"
-                        >
-
-                        <span class="qual-status ${status.className}">
-                          ${status.label}
-                        </span>
-                      </div>
-                    `;
-                  }).join("")}
+                  ${
+                    isOpen
+                      ? renderQualificationAccordionBody(member, index)
+                      : ""
+                  }
                 </div>
               `;
             }).join("")
@@ -2540,24 +3014,183 @@ function renderQualifications() {
   `;
 }
 
+function renderQualificationAccordionBody(member, index) {
+  const tracked = getMemberTrackedQuals(member);
+
+  return `
+    <div class="qualification-accordion-body">
+      <h4>Tracked Qualifications</h4>
+
+      ${
+        tracked.length === 0
+          ? `<p class="empty-text">No qualifications added yet.</p>`
+          : tracked.map((item, qualIndex) => {
+              const status = getSingleTrackedQualStatus(item);
+
+              return `
+                <div class="member-card">
+                  <h4>${item.qual}</h4>
+
+                  <p class="${status.className}">
+                    ${status.label}
+                  </p>
+
+                  <label>Due Date</label>
+                  <input
+                    type="date"
+                    value="${item.dueDate || ""}"
+                    onchange="updateTrackedQualDueDate(${index}, ${qualIndex}, this.value)"
+                  >
+
+                  <label>Status</label>
+                  <select onchange="updateTrackedQualStatus(${index}, ${qualIndex}, this.value)">
+                    <option value="" ${!item.status ? "selected" : ""}>None</option>
+                    <option value="ET" ${item.status === "ET" ? "selected" : ""}>ET</option>
+                    <option value="PERFORMANCE PROBATION" ${item.status === "PERFORMANCE PROBATION" ? "selected" : ""}>Performance Probation</option>
+                  </select>
+
+                  <button class="delete-btn" onclick="removeTrackedQualFromMember(${index}, ${qualIndex})">
+                    Remove Qualification
+                  </button>
+                </div>
+              `;
+            }).join("")
+      }
+
+      <div class="member-card">
+        <h4>Add Qualification</h4>
+
+        <label>Qualification</label>
+        <select id="newTrackedQual_${index}">
+          ${trackedQualificationOptions.map(qual => `
+            <option>${qual}</option>
+          `).join("")}
+        </select>
+
+        <label>Due Date</label>
+        <input id="newTrackedQualDate_${index}" type="date">
+
+        <button class="primary-btn" onclick="addTrackedQualToMember(${index})">
+          Add Qualification
+        </button>
+      </div>
+
+      <button class="secondary-btn" onclick="removeMemberFromQualificationTracking(${index})">
+        Remove Member from Tracking
+      </button>
+    </div>
+  `;
+}
+
+window.toggleQualificationAccordion = function(index) {
+  openQualificationMemberId =
+    openQualificationMemberId === index
+      ? null
+      : index;
+
+  renderQualifications();
+};
+
+window.addTrackedQualToMember = function(index) {
+  const member = crew[index];
+  if (!member) return;
+
+  if (!member.trackedQuals) {
+    member.trackedQuals = [];
+  }
+
+  const qual = document.getElementById(`newTrackedQual_${index}`).value;
+  const dueDate = document.getElementById(`newTrackedQualDate_${index}`).value;
+
+  member.trackedQuals.push({
+    qual,
+    dueDate,
+    status: ""
+  });
+
+  member.trackQualifications = true;
+
+  saveCrew();
+  renderQualifications();
+};
+
+window.updateTrackedQualDueDate = function(index, qualIndex, value) {
+  if (!crew[index]?.trackedQuals?.[qualIndex]) return;
+
+  crew[index].trackedQuals[qualIndex].dueDate = value;
+
+  saveCrew();
+  renderQualifications();
+};
+
+window.updateTrackedQualStatus = function(index, qualIndex, value) {
+  if (!crew[index]?.trackedQuals?.[qualIndex]) return;
+
+  crew[index].trackedQuals[qualIndex].status = value;
+
+  saveCrew();
+  renderQualifications();
+};
+
+window.removeTrackedQualFromMember = function(index, qualIndex) {
+  if (!crew[index]?.trackedQuals) return;
+
+  crew[index].trackedQuals.splice(qualIndex, 1);
+
+  saveCrew();
+  renderQualifications();
+};
+
+function getTrackedQualificationCrew() {
+  return crew.filter(member => member.trackQualifications === true);
+}
+
+window.addMemberToQualificationTracking = function(index) {
+  if (!crew[index]) return;
+
+  crew[index].trackQualifications = true;
+
+  if (!crew[index].qualDueDates) {
+    crew[index].qualDueDates = {};
+  }
+
+  saveCrew();
+  viewPersonnelDetails(index);
+};
+
+window.removeMemberFromQualificationTracking = function(index) {
+  if (!crew[index]) return;
+
+  crew[index].trackQualifications = false;
+  crew[index].qualificationStatus = "";
+  crew[index].qualDueDates = {};
+  crew[index].trackedQuals = [];
+
+  saveCrew();
+  renderQualifications();
+};
+
 function getQualificationSummary() {
   let overdue = 0;
   let dueSoon = 0;
   let et = 0;
   let trainingProbation = 0;
 
-  crew.forEach(member => {
-    if (member.qualificationStatus === "ET") et++;
-    if (member.qualificationStatus === "TRAINING PROBATION") trainingProbation++;
+  const trackedCrew = getTrackedQualificationCrew();
 
-    if (member.qualDueDates) {
-      Object.values(member.qualDueDates).forEach(dateString => {
-        const status = getQualDueStatus(dateString);
+  trackedCrew.forEach(member => {
+    getMemberTrackedQuals(member).forEach(item => {
+      const status = getSingleTrackedQualStatus(item);
 
-        if (status.className === "qual-overdue") overdue++;
-        if (status.className === "qual-warning") dueSoon++;
-      });
-    }
+      if (status.label.includes("OVERDUE")) overdue++;
+      if (item.status === "ET") et++;
+      if (item.status === "PERFORMANCE PROBATION") trainingProbation++;
+
+      if (item.dueDate) {
+        const dueStatus = getQualDueStatus(item.dueDate);
+        if (dueStatus.className === "qual-warning") dueSoon++;
+      }
+    });
   });
 
   return {
@@ -2567,6 +3200,25 @@ function getQualificationSummary() {
     trainingProbation
   };
 }
+
+window.addSelectedMemberToQualificationTracking = function() {
+  const select = document.getElementById("qualTrackingMemberSelect");
+
+  if (!select || select.value === "") return;
+
+  const index = Number(select.value);
+
+  if (!crew[index]) return;
+
+  crew[index].trackQualifications = true;
+
+  if (!crew[index].qualDueDates) {
+    crew[index].qualDueDates = {};
+  }
+
+  saveCrew();
+  renderQualifications();
+};
 
 function memberMatchesQualificationFilter(member) {
   if (qualificationFilter === "All") return true;
@@ -3051,6 +3703,23 @@ window.saveDailyDutyCrew = function(dutyDate, crewType, selectedAssetIndex, note
     dutyDate
   };
 
+  const leaveConflicts = selectedRoles.filter(item => {
+    const memberIndex = crew.indexOf(item.member);
+    return isMemberOnLeaveForDate(memberIndex, dutyDate);
+  });
+
+  if (leaveConflicts.length > 0) {
+    const conflictNames = leaveConflicts
+      .map(item => `${item.role}: ${getFullDisplayName(item.member)}`)
+      .join(", ");
+
+    const continueSave = confirm(
+      `Warning: The following assigned crew are on leave for ${dutyDate}: ${conflictNames}. Save anyway?`
+    );
+
+    if (!continueSave) return;
+  }
+
   plannedCrews.push(plannedCrew);
   savePlannedCrews();
 
@@ -3065,8 +3734,28 @@ window.saveDailyDutyCrew = function(dutyDate, crewType, selectedAssetIndex, note
 
 // ---------- Crew Generator Helpers ----------
 function getAvailableCrewForGenerators() {
-  return sortMembers(crew.filter(member =>
+  const leaveForDate = getLeaveItemsForDate(dashboardDutyDate);
+  const unavailableIndexes = leaveForDate.map(item => item.memberIndex);
+
+  return sortMembers(crew.filter((member, index) =>
     member.status === "Available" &&
+    !unavailableIndexes.includes(index) &&
+    (
+      member.section === "PORT" ||
+      member.section === "STBD" ||
+      member.section === "Day Worker"
+    )
+  ));
+}
+
+function getAvailableCrewForMissionDate(missionDate) {
+  const leaveForDate = getLeaveItemsForDate(missionDate);
+  const unavailableIndexes = leaveForDate.map(item => item.memberIndex);
+
+  return sortMembers(crew.filter((member, index) =>
+    member.status === "Available" &&
+    !unavailableIndexes.includes(index) &&
+    member.dept !== "Galley" &&
     (
       member.section === "PORT" ||
       member.section === "STBD" ||
@@ -3377,6 +4066,457 @@ window.generateTrainingCrew = function() {
   `;
 };
 
+//--------------Leave ------------------
+
+function renderLeave() {
+  const leaveSummary = getLeaveSummary();
+  pageTitle.textContent = "Leave";
+  pageSubtitle.textContent = "Leave calendar, status board, and readiness impact";
+
+  content.innerHTML = `
+    <section class="dashboard-grid">
+      <section class="cards">
+        <div class="card">
+          <p>Total Entries</p>
+          <h3>${leaveSummary.total}</h3>
+        </div>
+
+        <div class="card warning">
+          <p>Out Today</p>
+          <h3>${leaveSummary.outToday}</h3>
+        </div>
+
+        <div class="card">
+          <p>Out Selected Date</p>
+          <h3>${leaveSummary.outSelectedDate}</h3>
+        </div>
+
+        <div class="card">
+          <p>Upcoming 30 Days</p>
+          <h3>${leaveSummary.upcoming}</h3>
+        </div>
+      </section>
+
+      
+
+      <div class="panel wide">
+        <h3>Add Leave Entry</h3>
+
+        <label>Member</label>
+        <select id="leaveMember">
+          ${
+            crew.length === 0
+              ? `<option value="">No personnel added.</option>`
+              : crew.map((member, index) => `
+                  <option value="${index}">
+                    ${getFullDisplayName(member)} - ${member.section}
+                  </option>
+                `).join("")
+          }
+        </select>
+
+        <label>Leave Type</label>
+        <select id="leaveType">
+          <option>Special Liberty</option>
+          <option>Parental Leave</option>
+          <option>Emergency Leave</option>
+          <option>INCONUS Leave</option>
+          <option>OCONUS Leave</option>
+          <option>TDY</option>
+          <option>School</option>
+          <option>Medical</option>
+        </select>
+
+        <label>Start Date</label>
+        <input id="leaveStartDate" type="date">
+
+        <label>End Date</label>
+        <input id="leaveEndDate" type="date">
+
+        <label>Notes</label>
+        <textarea id="leaveNotes"></textarea>
+
+        <button class="primary-btn" onclick="addLeaveItem()">
+          Add Leave Entry
+        </button>
+      </div>
+
+      <div class="panel wide">
+        <h3>Leave Calendar</h3>
+        ${renderLeaveCalendarMini()}
+      </div}
+
+      <div class="panel wide">
+        <h3>Availability Scenario</h3>
+
+        <p class="member-notes">
+          Temporarily mark personnel unavailable and check readiness impact.
+        </p>
+
+      </div>
+
+      <div class="panel wide">
+        <h3>Leave Status Board</h3>
+
+        <details>
+          <summary>
+            View ${leaveItems.length} Leave / TDY / School / Medical Entries
+          </summary>
+
+          ${
+            leaveItems.length === 0
+              ? `<p class="empty-text">No leave entries added.</p>`
+              : leaveItems.map(item => {
+                  const member = crew[item.memberIndex];
+
+                  return `
+                    <div class="member-card">
+                      <h4>${member ? getFullDisplayName(member) : "Unknown Member"}</h4>
+                      <p>${item.leaveType}</p>
+                      <p>${item.startDate} to ${item.endDate}</p>
+                      ${item.notes ? `<p class="member-notes">${item.notes}</p>` : ""}
+
+                      ${renderLeaveImpact(item)}
+
+                      <button class="delete-btn" onclick="deleteLeaveItem(${item.id})">
+                        Delete
+                      </button>
+                    </div>
+                  `;
+                }).join("")
+          }
+        </details>
+      </div>
+
+      <div class="panel wide">
+        <h3>Leave for ${selectedLeaveDate}</h3>
+
+        ${
+          getLeaveItemsForDate(selectedLeaveDate).length === 0
+            ? `<p class="empty-text">No leave entries for this date.</p>`
+            : getLeaveItemsForDate(selectedLeaveDate).map(item => {
+                const member = crew[item.memberIndex];
+
+                return `
+                  <div class="member-card">
+                    <h4>${member ? getFullDisplayName(member) : "Unknown Member"}</h4>
+                    <p>${item.leaveType}</p>
+                    <p>${item.startDate} to ${item.endDate}</p>
+                    ${item.notes ? `<p class="member-notes">${item.notes}</p>` : ""}
+                    ${renderLeaveImpact(item)}
+                  </div>
+                `;
+              }).join("")
+        }
+      </div>
+    </section>
+  `;
+}
+
+window.addLeaveItem = function() {
+  const memberIndex = Number(document.getElementById("leaveMember").value);
+
+  const startDate = document.getElementById("leaveStartDate").value;
+  const endDate = document.getElementById("leaveEndDate").value;
+
+  if (!startDate || !endDate) {
+    document.getElementById("leaveStartDate").focus();
+    return;
+  }
+
+  const existingOverlap = leaveItems.find(item =>
+    item.memberIndex === memberIndex &&
+    leaveRangesOverlap(startDate, endDate, item.startDate, item.endDate)
+  );
+
+  if (existingOverlap) {
+    const continueSave = confirm(
+      "This member already has a leave/TDY/school/medical entry during this date range. Save anyway?"
+    );
+
+    if (!continueSave) return;
+  }
+
+  leaveItems.push({
+    id: Date.now(),
+    memberIndex,
+    leaveType: document.getElementById("leaveType").value,
+    startDate,
+    endDate,
+    notes: document.getElementById("leaveNotes").value.trim()
+  });
+
+  saveLeaveItems();
+  renderLeave();
+};
+
+window.deleteLeaveItem = function(id) {
+  leaveItems = leaveItems.filter(item => item.id !== id);
+  saveLeaveItems();
+  renderLeave();
+};
+
+function doesLeaveAffectDate(leaveItem, dateString) {
+  return dateString >= leaveItem.startDate && dateString <= leaveItem.endDate;
+}
+
+function getCrewWithLeaveApplied(dateString) {
+  const simulatedCrew = JSON.parse(JSON.stringify(crew));
+
+  leaveItems.forEach(item => {
+    if (doesLeaveAffectDate(item, dateString)) {
+      if (simulatedCrew[item.memberIndex]) {
+        simulatedCrew[item.memberIndex].status = "Leave";
+      }
+    }
+  });
+
+  return simulatedCrew;
+}
+
+function checkReadinessFromLeaveDate(sectionName, dateString) {
+  const simulatedCrew = getCrewWithLeaveApplied(dateString);
+
+  return checkReadinessFromList(sectionName, simulatedCrew);
+}
+
+function renderLeaveImpact(item) {
+  const member = crew[item.memberIndex];
+
+  if (!member) {
+    return `<p class="member-notes">Member not found.</p>`;
+  }
+
+  const section = member.section;
+  const result = checkReadinessFromLeaveDate(section, item.startDate);
+
+  if (result.ready) {
+    return `
+      <div class="scenario-readiness ready-panel">
+        <strong>Impact:</strong> Green - No readiness impact detected.
+      </div>
+    `;
+  }
+
+  const standbyOptions = result.missing.flatMap(req =>
+    getDayWorkerOptionsFromList(req, getCrewWithLeaveApplied(item.startDate))
+  );
+
+  if (standbyOptions.length > 0) {
+    return `
+      <div class="scenario-readiness warning">
+        <strong>Impact:</strong> Amber - Standby coverage may be needed.
+        <p class="member-notes">
+          Missing: ${result.missing.join(", ")}
+        </p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="scenario-readiness not-ready-panel">
+      <strong>Impact:</strong> Red - Readiness impact detected.
+      <p class="member-notes">
+        Missing: ${result.missing.join(", ")}
+      </p>
+    </div>
+  `;
+}
+
+function getLeaveItemsForDate(dateString) {
+  return leaveItems.filter(item =>
+    dateString >= item.startDate &&
+    dateString <= item.endDate
+  );
+}
+
+function getLeaveCalendarMonthDays() {
+  const year = calendarYear;
+  const month = calendarMonth;
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  return {
+    year,
+    month,
+    startWeekday: firstDay.getDay(),
+    daysInMonth: lastDay.getDate(),
+    monthName: firstDay.toLocaleString("default", { month: "long" })
+  };
+}
+
+function renderLeaveCalendarMini() {
+  const data = getLeaveCalendarMonthDays();
+  let cells = "";
+
+  for (let i = 0; i < data.startWeekday; i++) {
+    cells += `<div class="calendar-cell empty"></div>`;
+  }
+
+  for (let day = 1; day <= data.daysInMonth; day++) {
+    const date = new Date(data.year, data.month, day);
+
+    const dateString =
+      date.getFullYear() +
+      "-" +
+      String(date.getMonth() + 1).padStart(2, "0") +
+      "-" +
+      String(date.getDate()).padStart(2, "0");
+
+    const leaveForDay = getLeaveItemsForDate(dateString);
+    const section = getDutySectionForDate(dateString);
+
+    cells += `
+      <div
+        class="calendar-cell ${section === "PORT" ? "port-day" : "stbd-day"}"
+        onclick="selectLeaveDate('${dateString}')"
+      >
+        <strong>${day}</strong>
+
+        ${
+          leaveForDay.length === 0
+            ? `<div class="calendar-crews"><span>No Leave</span></div>`
+            : `
+              <div class="calendar-crews">
+                ${leaveForDay.slice(0, 2).map(item => {
+                  const member = crew[item.memberIndex];
+
+                  return `
+                    <div class="calendar-crew-tag">
+                      ${member ? member.lastName || "Member" : "Member"} - ${item.leaveType}
+                    </div>
+                  `;
+                }).join("")}
+                ${
+                  leaveForDay.length > 2
+                    ? `<div class="calendar-more">+${leaveForDay.length - 2} more</div>`
+                    : ""
+                }
+              </div>
+            `
+        }
+      </div>
+    `;
+  }
+
+  return `
+    <div class="calendar-header">
+      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(-1)">
+        Previous
+      </button>
+
+      <h3>${data.monthName} ${data.year}</h3>
+
+      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(1)">
+        Next
+      </button>
+    </div>
+
+    <div class="calendar-grid">
+      <div class="calendar-weekday">Sun</div>
+      <div class="calendar-weekday">Mon</div>
+      <div class="calendar-weekday">Tue</div>
+      <div class="calendar-weekday">Wed</div>
+      <div class="calendar-weekday">Thu</div>
+      <div class="calendar-weekday">Fri</div>
+      <div class="calendar-weekday">Sat</div>
+
+      ${cells}
+    </div>
+  `;
+}
+
+window.changeLeaveCalendarMonth = function(direction) {
+  calendarMonth += direction;
+
+  if (calendarMonth < 0) {
+    calendarMonth = 11;
+    calendarYear--;
+  }
+
+  if (calendarMonth > 11) {
+    calendarMonth = 0;
+    calendarYear++;
+  }
+
+  renderLeaveCalendarMini();
+};
+
+window.selectLeaveDate = function(dateString) {
+  selectedLeaveDate = dateString;
+  renderLeave();
+};
+
+function getLeaveItemsForDashboardDate() {
+  return getLeaveItemsForDate(dashboardDutyDate);
+}
+
+function getLeaveSummaryForDashboardDate() {
+  const leaveForDate = getLeaveItemsForDashboardDate();
+
+  return {
+    total: leaveForDate.length,
+    items: leaveForDate
+  };
+}
+
+function isMemberOnLeaveForDate(memberIndex, dateString) {
+  return leaveItems.some(item =>
+    item.memberIndex === memberIndex &&
+    dateString >= item.startDate &&
+    dateString <= item.endDate
+  );
+}
+
+function getPlannedCrewLeaveConflictsForDate(dateString) {
+  const plans = plannedCrews.filter(plan => plan.dutyDate === dateString);
+  const conflicts = [];
+
+  plans.forEach(plan => {
+    plan.crew.forEach(item => {
+      const memberIndex = crew.indexOf(item.member);
+
+      if (isMemberOnLeaveForDate(memberIndex, dateString)) {
+        conflicts.push({
+          plan,
+          role: item.role,
+          member: item.member
+        });
+      }
+    });
+  });
+
+  return conflicts;
+}
+
+function leaveRangesOverlap(startA, endA, startB, endB) {
+  return startA <= endB && endA >= startB;
+}
+
+function getLeaveSummary() {
+  const today = getLocalDateString();
+
+  const outToday = getLeaveItemsForDate(today).length;
+  const outSelectedDate = getLeaveItemsForDate(selectedLeaveDate).length;
+
+  const todayDate = new Date(`${today}T12:00:00`);
+  const thirtyDaysFromNow = new Date(todayDate);
+  thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+  const upcoming = leaveItems.filter(item => {
+    const start = new Date(`${item.startDate}T12:00:00`);
+    return start >= todayDate && start <= thirtyDaysFromNow;
+  }).length;
+
+  return {
+    total: leaveItems.length,
+    outToday,
+    outSelectedDate,
+    upcoming
+  };
+}
+
 // ---------- Mission Package Builder ----------
 function buildMissionCrewForType(missionType) {
   const availableCrew = getAvailableCrewForGenerators();
@@ -3432,6 +4572,64 @@ function buildMissionCrewForType(missionType) {
   };
 }
 
+function renderCrewSelectOptions(selectedIndex = "") {
+  const availableCrew = getAvailableCrewForGenerators();
+
+  return `
+    <option value="">None selected</option>
+    ${availableCrew.map(member => {
+      const index = crew.indexOf(member);
+
+      return `
+        <option value="${index}" ${String(index) === String(selectedIndex) ? "selected" : ""}>
+          ${getFullDisplayName(member)} - ${member.section}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
+function renderQualifiedCrewOptions(roleType, missionDate, selectedIndex = "") {
+  const availableCrew = getAvailableCrewForMissionDate(missionDate);
+
+  const filteredCrew = availableCrew.filter(member => {
+    if (roleType === "Coxswain") {
+      return memberHasQual(member, "PCX") || memberHasQual(member, "CX");
+    }
+
+    if (roleType === "Engineer") {
+      return memberHasQual(member, "ENG");
+    }
+
+    if (roleType === "BO") {
+      return memberHasQual(member, "BO");
+    }
+
+    if (roleType === "BTM") {
+      return memberHasQual(member, "BTM");
+    }
+
+    if (roleType === "Crewman") {
+      return memberHasQual(member, "CR");
+    }
+
+    return true;
+  });
+
+  return `
+    <option value="">None selected</option>
+    ${filteredCrew.map(member => {
+      const index = crew.indexOf(member);
+
+      return `
+        <option value="${index}" ${String(index) === String(selectedIndex) ? "selected" : ""}>
+          ${getFullDisplayName(member)} - ${member.section}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
 window.showMissionPackageBuilder = function() {
   const missionAssets = assets.filter(asset =>
     asset.status === "FMC" || asset.status === "PMC"
@@ -3440,34 +4638,47 @@ window.showMissionPackageBuilder = function() {
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
       <h4>Mission Package Builder</h4>
-      <p>Build a printable mission planning package with asset, crew, and checklist notes.</p>
+      <p>
+        Build a mission package by selecting assets first. Each asset will get its own crew assignment.
+      </p>
     </div>
 
     <div class="mission-package-form">
+      <label>Mission Name</label>
+      <input id="missionPackageName" placeholder="Example: Evening SAR Patrol">
+
+      <label>Mission Date</label>
+      <input id="missionPackageDate" type="date" value="${dashboardDutyDate}">
+
       <label>Mission Type</label>
       <select id="missionPackageType">
         <option>SAR</option>
         <option>LE Boarding</option>
         <option>Pursuit</option>
         <option>Training</option>
+        <option>Patrol</option>
         <option>Other</option>
       </select>
 
-      <label>Selected Asset</label>
-      <select id="missionPackageAsset">
+      <label>Location / Area</label>
+      <input id="missionPackageLocation" placeholder="Optional">
+
+      <label>Select Mission Assets</label>
+      <div class="checks mission-selected-assets">
         ${
           missionAssets.length === 0
-            ? `<option value="">No FMC/PMC assets available</option>`
+            ? `<p>No FMC/PMC assets available.</p>`
             : missionAssets.map((asset, index) => `
-                <option value="${index}">
+                <label>
+                  <input type="checkbox" value="${index}">
                   ${asset.name} - ${asset.type} - ${asset.status}
-                </option>
+                </label>
               `).join("")
         }
-      </select>
+      </div>
 
       <label>Mission Notes</label>
-      <textarea id="missionPackageNotes" placeholder="Example: SAR case details, training objective, boarding notes, communications plan, weather, etc."></textarea>
+      <textarea id="missionPackageNotes" placeholder="Case details, patrol area, training objective, etc."></textarea>
 
       <label>Briefing Checklist</label>
       <div class="checks mission-checklist">
@@ -3479,8 +4690,756 @@ window.showMissionPackageBuilder = function() {
         <label><input type="checkbox" value="Command notified"> Command notified</label>
       </div>
 
-      <button class="primary-btn scenario-btn" onclick="generateMissionPackage()">
-        Generate Mission Package
+      <button class="primary-btn scenario-btn" onclick="generateAssetSpecificMissionDraft()">
+        Generate Asset Crew Planner
+      </button>
+    </div>
+  `;
+};
+
+window.generateAssetSpecificMissionDraft = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAssetIndexes = [...document.querySelectorAll(".mission-selected-assets input:checked")]
+    .map(input => Number(input.value));
+
+  if (selectedAssetIndexes.length === 0) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select at least one mission asset.</p>
+      </div>
+    `);
+    return;
+  }
+
+  const missionName = document.getElementById("missionPackageName").value.trim();
+  const missionDate = document.getElementById("missionPackageDate").value || dashboardDutyDate;
+  const missionType = document.getElementById("missionPackageType").value;
+  const location = document.getElementById("missionPackageLocation").value.trim();
+  const notes = document.getElementById("missionPackageNotes").value.trim();
+
+  const checklist = [...document.querySelectorAll(".mission-checklist input:checked")]
+    .map(input => input.value);
+
+  const selectedAssets = selectedAssetIndexes
+    .map(index => missionAssets[index])
+    .filter(asset => asset);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report">
+      <h3>Mission Asset Crew Planner</h3>
+
+      <input type="hidden" id="draftMissionName" value="${missionName || "Unnamed Mission"}">
+      <input type="hidden" id="draftMissionDate" value="${missionDate}">
+      <input type="hidden" id="draftMissionType" value="${missionType}">
+      <input type="hidden" id="draftMissionLocation" value="${location || ""}">
+      <input type="hidden" id="draftSelectedAssetIndexes" value='${JSON.stringify(selectedAssetIndexes)}'>
+
+      <div class="scenario-summary">
+        <p><strong>Mission Name:</strong> ${missionName || "Unnamed Mission"}</p>
+        <p><strong>Mission Date:</strong> ${missionDate}</p>
+        <p><strong>Mission Type:</strong> ${missionType}</p>
+        <p><strong>Location:</strong> ${location || "Not listed"}</p>
+      </div>
+
+      ${selectedAssets.map((asset, assetCardIndex) => `
+        <div class="scenario-summary mission-asset-card" data-asset-index="${selectedAssetIndexes[assetCardIndex]}">
+          <h4>${asset.name} - ${asset.type} - ${asset.status}</h4>
+
+          <label>Asset Mission / Purpose</label>
+          <input
+            class="asset-mission-purpose"
+            value="${missionType}"
+            placeholder="Example: SAR, Patrol, Training, Support"
+          >
+
+          <label>Coxswain / PCXC / CXC</label>
+          <select class="asset-crew-coxswain">
+            ${renderQualifiedCrewOptions("Coxswain", missionDate)}
+          </select>
+
+          <label>Engineer</label>
+          <select class="asset-crew-engineer">
+            ${renderQualifiedCrewOptions("Engineer", missionDate)}
+          </select>
+
+          <label>Boarding Officer</label>
+          <select class="asset-crew-bo">
+            ${renderQualifiedCrewOptions("BO", missionDate)}
+          </select>
+
+          <label>Boarding Team Member</label>
+          <select class="asset-crew-btm">
+            ${renderQualifiedCrewOptions("BTM", missionDate)}
+          </select>
+
+          <label>Crewman / Additional Crew</label>
+          <select class="asset-crew-cr">
+            ${renderQualifiedCrewOptions("Crewman", missionDate)}
+          </select>
+        </div>
+      `).join("")}
+
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p id="draftMissionNotes">${notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+        <div id="draftChecklist">
+          ${
+            checklist.length === 0
+              ? `<p>No checklist items selected.</p>`
+              : `<ul>${checklist.map(item => `<li>${item}</li>`).join("")}</ul>`
+          }
+        </div>
+      </div>
+
+      <button class="primary-btn scenario-btn" onclick="finalizeAssetSpecificMissionPackage()">
+        Finalize Mission Package
+      </button>
+
+      <button class="secondary-btn scenario-btn" onclick="showMissionPackageBuilder()">
+        Back
+      </button>
+    </div>
+  `;
+};
+
+window.finalizeAssetSpecificMissionPackage = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const missionName = document.getElementById("draftMissionName").value;
+  const missionDate = document.getElementById("draftMissionDate").value;
+  const missionType = document.getElementById("draftMissionType").value;
+  const location = document.getElementById("draftMissionLocation").value;
+  const notes = document.getElementById("draftMissionNotes").textContent;
+  const checklistHTML = document.getElementById("draftChecklist").innerHTML;
+
+  const assetCrews = [...document.querySelectorAll(".mission-asset-card")]
+    .map(card => {
+      const assetIndex = Number(card.dataset.assetIndex);
+      const asset = missionAssets[assetIndex];
+
+      if (!asset) return null;
+
+      const purpose = card.querySelector(".asset-mission-purpose").value.trim();
+
+      const crewAssignments = [
+        {
+          role: "Coxswain / PCXC / CXC",
+          member: crew[Number(card.querySelector(".asset-crew-coxswain").value)]
+        },
+        {
+          role: "Engineer",
+          member: crew[Number(card.querySelector(".asset-crew-engineer").value)]
+        },
+        {
+          role: "Boarding Officer",
+          member: crew[Number(card.querySelector(".asset-crew-bo").value)]
+        },
+        {
+          role: "Boarding Team Member",
+          member: crew[Number(card.querySelector(".asset-crew-btm").value)]
+        },
+        {
+          role: "Crewman / Additional Crew",
+          member: crew[Number(card.querySelector(".asset-crew-cr").value)]
+        }
+      ].filter(item => item.member);
+
+      return {
+        asset,
+        purpose,
+        crew: crewAssignments
+      };
+    })
+    .filter(item => item);
+
+  const savedPackage = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionName,
+    missionDate,
+    missionType,
+    location,
+    assetCrews,
+    notes,
+    checklistHTML
+  };
+
+  missionPackages.push(savedPackage);
+  saveMissionPackages();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report printable-report">
+      <h3>${missionName || "Watch Keeper Mission Package"}</h3>
+
+      <div class="scenario-summary">
+        <p><strong>Mission Date:</strong> ${missionDate}</p>
+        <p><strong>Mission Type:</strong> ${missionType}</p>
+        <p><strong>Location:</strong> ${location || "Not listed"}</p>
+      </div>
+
+      ${
+        assetCrews.length === 0
+          ? `<p class="empty-text">No asset crews assigned.</p>`
+          : assetCrews.map(group => `
+              <div class="scenario-summary">
+                <h4>${group.asset.name} - ${group.asset.type} - ${group.asset.status}</h4>
+                <p><strong>Purpose:</strong> ${group.purpose || missionType}</p>
+
+                ${
+                  group.crew.length === 0
+                    ? `<p>No crew assigned.</p>`
+                    : `
+                      <ul>
+                        ${group.crew.map(item => `
+                          <li>
+                            <strong>${item.role}:</strong>
+                            ${getFullDisplayName(item.member)}
+                          </li>
+                        `).join("")}
+                      </ul>
+                    `
+                }
+              </div>
+            `).join("")
+      }
+
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p>${notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+        ${checklistHTML}
+      </div>
+
+      <button class="primary-btn scenario-btn no-print" onclick="window.print()">
+        Print Mission Package
+      </button>
+
+      <button class="secondary-btn scenario-btn no-print" onclick="saveAssetSpecificMissionAsPlannedCrew(${savedPackage.id})">
+        Save as Planned Crew
+      </button>
+    </div>
+  `;
+};
+
+window.saveAssetSpecificMissionAsPlannedCrew = function(packageId) {
+  const pkg = missionPackages.find(item => item.id === packageId);
+
+  if (!pkg) return;
+
+  const flattenedCrew = [];
+
+  pkg.assetCrews.forEach(group => {
+    group.crew.forEach(item => {
+      flattenedCrew.push({
+        role: `${group.asset.name} - ${item.role}`,
+        member: item.member
+      });
+    });
+  });
+
+  const plannedCrew = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionType: pkg.missionType || "Mission Crew",
+    asset: pkg.assetCrews[0]?.asset || {
+      name: "Multi-Asset Mission",
+      type: "Multiple Assets",
+      status: "Planned"
+    },
+    additionalAssets: pkg.assetCrews.slice(1).map(group => group.asset),
+    crew: flattenedCrew,
+    notes: pkg.notes,
+    checklistHTML: pkg.checklistHTML,
+    dutyDate: pkg.missionDate || dashboardDutyDate
+  };
+
+  plannedCrews.push(plannedCrew);
+  savePlannedCrews();
+
+  document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+    <div class="scenario-summary no-print">
+      <strong>Saved as planned crew for ${plannedCrew.dutyDate}.</strong>
+    </div>
+  `);
+};
+
+window.addMissionCrewReviewRow = function() {
+  const container = document.getElementById("missionCrewReview");
+
+  if (!container) return;
+
+  container.insertAdjacentHTML("beforeend", `
+    <div class="mission-crew-review-row">
+      <input
+        class="mission-review-role"
+        placeholder="Role"
+      >
+
+      <select class="mission-review-member">
+        ${renderCrewSelectOptions()}
+      </select>
+
+      <button class="delete-btn" onclick="this.closest('.mission-crew-review-row').remove()">
+        Remove
+      </button>
+    </div>
+  `);
+};
+
+window.finalizeManualMissionPackageFromReview = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAssetIndex = Number(document.getElementById("draftSelectedAssetIndex").value);
+  const selectedAsset = missionAssets[selectedAssetIndex];
+
+  const additionalAssetIndexes = document.getElementById("draftAdditionalAssetIndexes").value
+    ? JSON.parse(document.getElementById("draftAdditionalAssetIndexes").value)
+    : [];
+
+  const additionalAssets = additionalAssetIndexes
+    .map(index => missionAssets[index])
+    .filter(asset => asset);
+
+  const selectedRoles = [...document.querySelectorAll(".mission-crew-review-row")]
+    .map(row => {
+      const role = row.querySelector(".mission-review-role").value.trim();
+      const memberIndex = Number(row.querySelector(".mission-review-member").value);
+      const member = crew[memberIndex];
+
+      return {
+        role,
+        member
+      };
+    })
+    .filter(item => item.role && item.member);
+
+  const missionName = document.getElementById("draftMissionName").value;
+  const missionDate = document.getElementById("draftMissionDate").value;
+  const missionType = document.getElementById("draftMissionType").value;
+  const location = document.getElementById("draftMissionLocation").value;
+  const notes = document.getElementById("draftMissionNotes").textContent;
+  const checklistHTML = document.getElementById("draftChecklist").innerHTML;
+
+  const savedPackage = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionName,
+    missionDate,
+    missionType,
+    location,
+    asset: selectedAsset,
+    additionalAssets,
+    crew: selectedRoles,
+    notes,
+    checklistHTML
+  };
+
+  missionPackages.push(savedPackage);
+  saveMissionPackages();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report printable-report">
+      <h3>${missionName || "Watch Keeper Mission Package"}</h3>
+      <p><strong>Mission Date:</strong> ${missionDate}</p>
+      <div class="scenario-summary">
+        <p><strong>Mission Type:</strong> ${missionType}</p>
+        <p><strong>Mission Date:</strong> ${missionDate}</p>
+        <p><strong>Location:</strong> ${location || "Not listed"}</p>
+        <p><strong>Primary Asset:</strong> ${selectedAsset.name} - ${selectedAsset.type} - ${selectedAsset.status}</p>
+
+        ${
+          additionalAssets.length > 0
+            ? `
+              <p><strong>Additional Assets:</strong></p>
+              <ul>
+                ${additionalAssets.map(asset => `
+                  <li>${asset.name} - ${asset.type} - ${asset.status}</li>
+                `).join("")}
+              </ul>
+            `
+            : ""
+        }
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Final Crew Assignment</h4>
+
+        ${
+          selectedRoles.length === 0
+            ? `<p>No crew assigned.</p>`
+            : `
+              <ul>
+                ${selectedRoles.map(item => `
+                  <li>
+                    <strong>${item.role}:</strong>
+                    ${getFullDisplayName(item.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+        }
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p>${notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+        ${checklistHTML}
+      </div>
+
+      <button class="primary-btn scenario-btn no-print" onclick="window.print()">
+        Print Mission Package
+      </button>
+
+      <button class="secondary-btn scenario-btn no-print" onclick="saveAsPlannedCrew(${savedPackage.id})">
+        Save as Planned Crew
+      </button>
+    </div>
+  `;
+};
+
+window.generateManualMissionPackage = function() {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAssetIndex = Number(
+    document.getElementById("missionPackageAsset").value
+  );
+
+  const selectedAsset = missionAssets[selectedAssetIndex];
+
+  if (!selectedAsset) {
+    document.getElementById("scenarioResult").insertAdjacentHTML("beforeend", `
+      <div class="scenario-readiness not-ready-panel">
+        <p>Select an FMC or PMC asset.</p>
+      </div>
+    `);
+    return;
+  }
+
+  const additionalAssetIndexes = [
+    ...document.querySelectorAll(".mission-additional-assets input:checked")
+  ]
+    .map(input => Number(input.value))
+    .filter(index => index !== selectedAssetIndex);
+
+  const additionalAssets = additionalAssetIndexes
+    .map(index => missionAssets[index])
+    .filter(asset => asset);
+
+  const missionName = document.getElementById("missionPackageName").value.trim();
+  const missionDate = document.getElementById("missionPackageDate").value || dashboardDutyDate;
+  const missionType = document.getElementById("missionPackageType").value;
+  const location = document.getElementById("missionPackageLocation").value.trim();
+  const notes = document.getElementById("missionPackageNotes").value.trim();
+
+  const selectedRoles = [
+    {
+      role: "Coxswain / PCXC / CXC",
+      member: crew[Number(document.getElementById("missionCrewCoxswain").value)]
+    },
+    {
+      role: "Engineer",
+      member: crew[Number(document.getElementById("missionCrewEngineer").value)]
+    },
+    {
+      role: "Boarding Officer",
+      member: crew[Number(document.getElementById("missionCrewBO").value)]
+    },
+    {
+      role: "Boarding Team Member",
+      member: crew[Number(document.getElementById("missionCrewBTM").value)]
+    },
+    {
+      role: "Crewman / Additional Crew",
+      member: crew[Number(document.getElementById("missionCrewExtra").value)]
+    },
+    {
+      role: "Support Member 1",
+      member: crew[Number(document.getElementById("missionSupportCrew1").value)]
+    },
+    {
+      role: "Support Member 2",
+      member: crew[Number(document.getElementById("missionSupportCrew2").value)]
+    }
+  ].filter(item => item.member);
+
+  const checklist = [...document.querySelectorAll(".mission-checklist input:checked")]
+    .map(input => input.value);
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report">
+      <h3>Mission Package Draft</h3>
+
+      <input type="hidden" id="draftSelectedAssetIndex" value="${selectedAssetIndex}">
+      <input type="hidden" id="draftAdditionalAssetIndexes" value='${JSON.stringify(additionalAssetIndexes)}'>
+      <input type="hidden" id="draftMissionName" value="${missionName || "Unnamed Mission"}">
+      <input type="hidden" id="draftMissionDate" value="${missionDate}">
+      <input type="hidden" id="draftMissionType" value="${missionType}">
+      <input type="hidden" id="draftMissionLocation" value="${location || ""}">
+
+      <div class="scenario-summary">
+        <p><strong>Mission Name:</strong> ${missionName || "Unnamed Mission"}</p>
+        <p><strong>Mission Date:</strong> ${missionDate}</p>
+        <p><strong>Mission Type:</strong> ${missionType}</p>
+        <p><strong>Location:</strong> ${location || "Not listed"}</p>
+
+        <p>
+          <strong>Primary Asset:</strong>
+          ${selectedAsset.name} - ${selectedAsset.type} - ${selectedAsset.status}
+        </p>
+
+        ${
+          additionalAssets.length > 0
+            ? `
+              <p><strong>Additional Assets:</strong></p>
+              <ul>
+                ${additionalAssets.map(asset => `
+                  <li>${asset.name} - ${asset.type} - ${asset.status}</li>
+                `).join("")}
+              </ul>
+            `
+            : ""
+        }
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Crew Assignment</h4>
+
+        <div id="missionCrewReview">
+          ${
+            selectedRoles.length === 0
+              ? ""
+              : selectedRoles.map(item => `
+                  <div class="mission-crew-review-row">
+                    <input
+                      class="mission-review-role"
+                      value="${item.role}"
+                    >
+
+                    <select class="mission-review-member">
+                      ${renderCrewSelectOptions(crew.indexOf(item.member))}
+                    </select>
+
+                    <button
+                      class="delete-btn"
+                      onclick="this.closest('.mission-crew-review-row').remove()"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                `).join("")
+          }
+        </div>
+
+        ${
+          selectedRoles.length === 0
+            ? `<p class="empty-text">No crew assigned yet. Use Add Crew Member below.</p>`
+            : ""
+        }
+
+        <button
+          class="secondary-btn scenario-btn"
+          onclick="addMissionCrewReviewRow()"
+        >
+          Add Crew Member
+        </button>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p id="draftMissionNotes">${notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+
+        <div id="draftChecklist">
+          ${
+            checklist.length === 0
+              ? `<p>No checklist items selected.</p>`
+              : `<ul>${checklist.map(item => `<li>${item}</li>`).join("")}</ul>`
+          }
+        </div>
+      </div>
+
+      <button
+        class="primary-btn scenario-btn"
+        onclick="finalizeManualMissionPackageFromReview()"
+      >
+        Finalize Mission Package
+      </button>
+
+      <button
+        class="secondary-btn scenario-btn"
+        onclick="showMissionPackageBuilder()"
+      >
+        Back
+      </button>
+    </div>
+  `;
+};
+
+window.finalizeManualMissionPackage = function(data) {
+  const missionAssets = assets.filter(asset =>
+    asset.status === "FMC" || asset.status === "PMC"
+  );
+
+  const selectedAsset = missionAssets[data.assetIndex];
+  const additionalAssets = (data.additionalAssetIndexes || [])
+    .map(index => missionAssets[index])
+    .filter(asset => asset);
+
+  const selectedRoles = data.crew.map(item => ({
+    role: item.role,
+    member: crew[item.memberIndex]
+  })).filter(item => item.member);
+
+  const supportRoles = (data.supportCrew || []).map(item => ({
+    role: item.role,
+    member: crew[item.memberIndex]
+  })).filter(item => item.member);
+
+  const checklistHTML =
+    data.checklist.length === 0
+      ? `<p>No checklist items selected.</p>`
+      : `<ul>${data.checklist.map(item => `<li>${item}</li>`).join("")}</ul>`;
+
+  const savedPackage = {
+    id: Date.now(),
+    createdAt: new Date().toISOString(),
+    missionName: data.missionName,
+    missionType: data.missionType,
+    location: data.location,
+    asset: selectedAsset,
+    additionalAssets,
+    crew: selectedRoles,
+    supportCrew: supportRoles,
+    notes: data.notes,
+    checklistHTML
+  };
+
+  missionPackages.push(savedPackage);
+  saveMissionPackages();
+
+  document.getElementById("scenarioResult").innerHTML = `
+    <div class="mission-package-report printable-report">
+      <h3>${data.missionName || "Watch Keeper Mission Package"}</h3>
+
+      <div class="scenario-summary">
+
+        <p>
+          <strong>Mission Type:</strong>
+          ${data.missionType}
+        </p>
+
+        <p>
+          <strong>Location:</strong>
+          ${data.location || "Not listed"}
+        </p>
+
+        <p>
+          <strong>Primary Asset:</strong>
+          ${selectedAsset.name} - ${selectedAsset.type} - ${selectedAsset.status}
+        </p>
+
+        ${
+          additionalAssets.length > 0
+            ? `
+              <p><strong>Additional Assets:</strong></p>
+
+              <ul>
+                ${additionalAssets.map(asset => `
+                  <li>
+                    ${asset.name} - ${asset.type} - ${asset.status}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+            : ""
+        }
+
+      </div>
+
+      <div class="scenario-summary">
+
+        <h4>Final Crew Assignment</h4>
+
+        ${
+          selectedRoles.length === 0
+            ? `<p>No crew assigned.</p>`
+            : `
+              <ul>
+                ${selectedRoles.map(item => `
+                  <li>
+                    <strong>${item.role}:</strong>
+                    ${getFullDisplayName(item.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+        }
+
+        ${
+          supportRoles.length > 0
+            ? `
+              <h4>Support Crew</h4>
+
+              <ul>
+                ${supportRoles.map(item => `
+                  <li>
+                    <strong>${item.role}:</strong>
+                    ${getFullDisplayName(item.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+            : ""
+        }
+
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Mission Notes</h4>
+        <p>${data.notes || "No notes entered."}</p>
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Briefing Checklist</h4>
+        ${checklistHTML}
+      </div>
+
+      <button
+        class="primary-btn scenario-btn"
+        onclick="finalizeManualMissionPackageFromReview()"
+      >
+        Finalize Mission Package
+      </button>
+
+      <button class="primary-btn scenario-btn no-print" onclick="window.print()">
+        Print Mission Package
+      </button>
+
+      <button class="secondary-btn scenario-btn no-print" onclick="saveAsPlannedCrew(${savedPackage.id})">
+        Save as Planned Crew
       </button>
     </div>
   `;
@@ -3802,14 +5761,39 @@ window.viewMissionPackage = function(id) {
 
       <div class="scenario-summary">
         <h4>Crew Assignment</h4>
-        <ul>
-          ${pkg.crew.map(item => `
-            <li>
-              <strong>${item.role}:</strong>
-              ${getFullDisplayName(item.member)}
-            </li>
-          `).join("")}
-        </ul>
+
+        ${
+          selectedRoles.length === 0
+            ? `<p class="empty-text">No crew assigned.</p>`
+            : `
+              <ul>
+                ${selectedRoles.map(item => `
+                  <li>
+                    <strong>${item.role}:</strong>
+                    ${getFullDisplayName(item.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+        }
+
+        ${
+          supportRoles.length > 0
+            ? `
+              <h4>Support Crew</h4>
+
+              <ul>
+                ${supportRoles.map(item => `
+                  <li>
+                    <strong>${item.role}:</strong>
+                    ${getFullDisplayName(item.member)}
+                  </li>
+                `).join("")}
+              </ul>
+            `
+            : ""
+        }
+
       </div>
 
       <div class="scenario-summary">
@@ -4209,6 +6193,7 @@ function setupEventListeners() {
       if (page === "smart-settings") renderSmartAssignmentSettings();
       if (page === "settings") renderSettings();
       if (page === "calendar") renderCalendar();
+      if (page === "leave") renderLeave();
     });
   });
 
