@@ -8,6 +8,9 @@ let editingIndex = null;
 let editingAssetIndex = null;
 let pendingPlannedCrewPackageId = null;
 let openQualificationMemberId = null;
+let selectedLeaveMatrixItemId = null;
+let editingLeaveItemId = null;
+let leaveMatrixViewMode = "normal";
 
 let crew = JSON.parse(localStorage.getItem("watchKeeperCrew")) || [];
 let assets = JSON.parse(localStorage.getItem("watchKeeperAssets")) || [];
@@ -18,10 +21,33 @@ let leaveItems =
   JSON.parse(localStorage.getItem("watchKeeperLeaveItems"))
   || [];
 
+let cdoSettings =
+  JSON.parse(localStorage.getItem("watchKeeperCdoSettings"))
+  || {
+    mode: "rotation",
+    startDate: getLocalDateString(),
+    rotationLengthDays: 7,
+    manualAssignments: {},
+    notes: ""
+  };
+
 let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 let qualificationFilter = "All";
 let workListFilter = "All";
+
+let leaveColorSettings =
+  JSON.parse(localStorage.getItem("watchKeeperLeaveColorSettings"))
+  || {
+    "INCONUS Leave": "#22c55e",
+    "OCONUS Leave": "#22c55e",
+    "TDY": "#f59e0b",
+    "School": "#f59e0b",
+    "Medical": "#3b82f6",
+    "Special Liberty": "#f97316",
+    "Emergency Leave": "#ef4444",
+    "Parental Leave": "#a855f7"
+  };
 
 let workItems =
   JSON.parse(localStorage.getItem("watchKeeperWorkItems"))
@@ -70,6 +96,7 @@ const pageTitle = document.getElementById("page-title");
 const pageSubtitle = document.getElementById("page-subtitle");
 
 const topbarButton = document.getElementById("openAddMember");
+const headerActions = document.getElementById("headerActions");
 
 const modal = document.getElementById("memberModal");
 const modalTitle = document.getElementById("modalTitle");
@@ -79,7 +106,7 @@ const assetModal = document.getElementById("assetModal");
 const assetModalTitle = document.getElementById("assetModalTitle");
 
 // ---------- Constants ----------
-const trackedQuals = ["OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR", "B/I"];
+const trackedQuals = ["CDO", "OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR", "B/I"];
 const readinessRequirements = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
 
 const rankOrder = [
@@ -132,6 +159,20 @@ function saveLeaveItems() {
   localStorage.setItem(
     "watchKeeperLeaveItems",
     JSON.stringify(leaveItems)
+  );
+}
+
+function saveCdoSettings() {
+  localStorage.setItem(
+    "watchKeeperCdoSettings",
+    JSON.stringify(cdoSettings)
+  );
+}
+
+function saveLeaveColorSettings() {
+  localStorage.setItem(
+    "watchKeeperLeaveColorSettings",
+    JSON.stringify(leaveColorSettings)
   );
 }
 
@@ -213,6 +254,291 @@ function countLEQualified(members) {
     )
   ).length;
 }
+
+// ----------- CDO MANAGEMENT ----------- //
+
+function getCdoQualifiedMembers() {
+  const cdoIndexes = crew
+    .map((member, index) =>
+      member.quals?.includes("CDO") ? index : null
+    )
+    .filter(index => index !== null);
+
+  if (!cdoSettings.rotationOrder) {
+    cdoSettings.rotationOrder = [];
+  }
+
+  cdoIndexes.forEach(index => {
+    if (!cdoSettings.rotationOrder.includes(index)) {
+      cdoSettings.rotationOrder.push(index);
+    }
+  });
+
+  cdoSettings.rotationOrder = cdoSettings.rotationOrder.filter(index =>
+    cdoIndexes.includes(index)
+  );
+
+  return cdoSettings.rotationOrder
+    .map(index => crew[index])
+    .filter(member => member);
+}
+
+function countCdoQualified(members) {
+  return members.filter(member =>
+    member.quals &&
+    member.quals.includes("CDO")
+  ).length;
+}
+
+function getCdoForDate(dateString) {
+  const cdoMembers = getCdoQualifiedMembers();
+
+  if (cdoSettings.manualAssignments[dateString] !== undefined) {
+    return cdoMembers[cdoSettings.manualAssignments[dateString]] || null;
+  }
+
+  if (cdoMembers.length === 0) return null;
+
+  const start = new Date(`${cdoSettings.startDate}T12:00:00`);
+  const target = new Date(`${dateString}T12:00:00`);
+
+  const daysPassed = Math.floor(
+    (target - start) / (1000 * 60 * 60 * 24)
+  );
+
+  const block = Math.floor(daysPassed / Number(cdoSettings.rotationLengthDays || 7));
+  const startIndex = Number(cdoSettings.startIndex || 0);
+
+  const index =
+    (((block + startIndex) % cdoMembers.length) + cdoMembers.length) %
+    cdoMembers.length;
+
+  return cdoMembers[index];
+}
+
+window.saveCdoRotationSettings = function() {
+  cdoSettings.startDate = document.getElementById("cdoStartDate").value || getLocalDateString();
+  cdoSettings.rotationLengthDays = Number(document.getElementById("cdoRotationLength").value);
+  cdoSettings.notes = document.getElementById("cdoNotes").value.trim();
+
+  saveCdoSettings();
+  renderSettings();
+};
+
+window.saveManualCdoAssignment = function() {
+  const date = document.getElementById("manualCdoDate").value;
+  const selectedIndex = Number(document.getElementById("manualCdoMember").value);
+
+  if (!date) return;
+
+  cdoSettings.manualAssignments[date] = selectedIndex;
+
+  saveCdoSettings();
+  renderSettings();
+};
+
+window.clearManualCdoAssignment = function() {
+  const date = document.getElementById("manualCdoDate").value;
+
+  if (!date) return;
+
+  delete cdoSettings.manualAssignments[date];
+
+  saveCdoSettings();
+  renderSettings();
+};
+
+function renderCdoManagementBox() {
+  const cdoMembers = getCdoQualifiedMembers();
+  const currentCdo = getCdoForDate(getLocalDateString());
+
+  const currentIndex = currentCdo
+    ? cdoMembers.indexOf(currentCdo)
+    : -1;
+
+  const nextCdo =
+    currentIndex >= 0 && cdoMembers.length > 1
+      ? cdoMembers[(currentIndex + 1) % cdoMembers.length]
+      : null;
+
+  return `
+    <div class="panel wide">
+      <h3>CDO Management</h3>
+
+      <p class="member-notes">
+        Manage CDO rotation order, start date, rotation length, manual assignments, and notes.
+      </p>
+
+      <label>Rotation Start Date</label>
+      <input id="cdoStartDateRoster" type="date" value="${cdoSettings.startDate}">
+
+      <label>Rotation Length</label>
+      <select id="cdoRotationLengthRoster">
+        <option value="1" ${Number(cdoSettings.rotationLengthDays) === 1 ? "selected" : ""}>Daily</option>
+        <option value="7" ${Number(cdoSettings.rotationLengthDays) === 7 ? "selected" : ""}>Weekly</option>
+        <option value="14" ${Number(cdoSettings.rotationLengthDays) === 14 ? "selected" : ""}>Every 2 Weeks</option>
+      </select>
+
+      <label>Who Starts Rotation</label>
+      <select id="cdoStartMemberRoster">
+        ${
+          cdoMembers.length === 0
+            ? `<option value="">No CDO-qualified personnel found.</option>`
+            : cdoMembers.map((member, index) => `
+                <option value="${index}" ${Number(cdoSettings.startIndex || 0) === index ? "selected" : ""}>
+                  ${getFullDisplayName(member)}
+                </option>
+              `).join("")
+        }
+      </select>
+
+      <label>CDO Notes</label>
+      <textarea id="cdoNotesRoster">${cdoSettings.notes || ""}</textarea>
+
+      <button class="primary-btn" onclick="saveCdoRosterSettings()">
+        Save CDO Rotation
+      </button>
+
+      <h4>CDO Rotation Order</h4>
+
+      <div id="cdoRotationOrderList">
+        ${
+          cdoMembers.length === 0
+            ? `<p class="empty-text">No CDO-qualified personnel listed.</p>`
+            : cdoMembers.map((member, index) => `
+                <div class="cdo-order-row ${member === currentCdo ? "current-cdo-row" : ""}">
+                  <span>
+                    ${index + 1}. ${getFullDisplayName(member)} - ${member.section}
+                    ${member === currentCdo ? " | CURRENT" : ""}
+                  </span>
+
+                  <div class="dashboard-date-actions">
+                    <button class="secondary-btn" onclick="moveCdoOrder(${crew.indexOf(member)}, -1)">
+                      Up
+                    </button>
+
+                    <button class="secondary-btn" onclick="moveCdoOrder(${crew.indexOf(member)}, 1)">
+                      Down
+                    </button>
+                  </div>
+                </div>
+              `).join("")
+        }
+      </div>
+
+      <div class="scenario-summary">
+        <h4>Current Rotation Status</h4>
+
+        ${
+          cdoMembers.length === 0
+            ? `<p class="empty-text">No CDO rotation available.</p>`
+            : `
+              <p>
+                <strong>Current CDO:</strong>
+                ${currentCdo ? getFullDisplayName(currentCdo) : "None Assigned"}
+              </p>
+
+              <p>
+                <strong>Next CDO:</strong>
+                ${nextCdo ? getFullDisplayName(nextCdo) : "N/A"}
+              </p>
+
+              <p>
+                <strong>Rotation Order:</strong><br>
+                ${cdoMembers.map((member, index) => `
+                  ${index + 1}. ${getFullDisplayName(member)}
+                `).join("<br>")}
+              </p>
+            `
+        }
+      </div>
+
+      <h4>Manual CDO Assignment</h4>
+
+      <label>Date</label>
+      <input id="manualCdoDateRoster" type="date" value="${dashboardDutyDate}">
+
+      <label>Assigned CDO</label>
+      <select id="manualCdoMemberRoster">
+        ${
+          cdoMembers.length === 0
+            ? `<option value="">No CDO-qualified personnel found.</option>`
+            : cdoMembers.map((member, index) => `
+                <option value="${index}">
+                  ${getFullDisplayName(member)}
+                </option>
+              `).join("")
+        }
+      </select>
+
+      <button class="secondary-btn" onclick="saveManualCdoAssignmentFromRoster()">
+        Save Manual CDO Assignment
+      </button>
+
+      <button class="delete-btn" onclick="clearManualCdoAssignmentFromRoster()">
+        Clear Manual Assignment for Date
+      </button>
+    </div>
+  `;
+}
+
+window.moveCdoOrder = function(memberIndex, direction) {
+  getCdoQualifiedMembers();
+
+  const currentPosition = cdoSettings.rotationOrder.indexOf(memberIndex);
+  const newPosition = currentPosition + direction;
+
+  if (currentPosition === -1) return;
+  if (newPosition < 0 || newPosition >= cdoSettings.rotationOrder.length) return;
+
+  const movedItem = cdoSettings.rotationOrder.splice(currentPosition, 1)[0];
+  cdoSettings.rotationOrder.splice(newPosition, 0, movedItem);
+
+  saveCdoSettings();
+  renderCrewRoster();
+};
+
+window.saveCdoRosterSettings = function() {
+  cdoSettings.startDate =
+    document.getElementById("cdoStartDateRoster").value || getLocalDateString();
+
+  cdoSettings.rotationLengthDays =
+    Number(document.getElementById("cdoRotationLengthRoster").value);
+
+  cdoSettings.startIndex =
+    Number(document.getElementById("cdoStartMemberRoster").value || 0);
+
+  cdoSettings.notes =
+    document.getElementById("cdoNotesRoster").value.trim();
+
+  saveCdoSettings();
+  renderCrewRoster();
+};
+
+window.saveManualCdoAssignmentFromRoster = function() {
+  const date = document.getElementById("manualCdoDateRoster").value;
+  const selectedIndex = Number(document.getElementById("manualCdoMemberRoster").value);
+
+  if (!date) return;
+
+  cdoSettings.manualAssignments[date] = selectedIndex;
+
+  saveCdoSettings();
+  renderCrewRoster();
+};
+
+window.clearManualCdoAssignmentFromRoster = function() {
+  const date = document.getElementById("manualCdoDateRoster").value;
+
+  if (!date) return;
+
+  delete cdoSettings.manualAssignments[date];
+
+  saveCdoSettings();
+  renderCrewRoster();
+};
+
+// ----------- END CDO MANAGEMENT ----------- //
 
 function memberHasQual(member, qual) {
   if (!member || !member.quals) return false;
@@ -366,8 +692,12 @@ function closeAssetModal() {
 }
 
 // ---------- Topbar ----------
+
 function updateTopbarButton(page) {
-  if (!topbarButton) return;
+  if (!topbarButton || !headerActions) return;
+
+  headerActions.innerHTML = "";
+  headerActions.appendChild(topbarButton);
 
   if (page === "dashboard") {
     topbarButton.style.display = "block";
@@ -378,7 +708,20 @@ function updateTopbarButton(page) {
     topbarButton.textContent = "+ Add Member";
     topbarButton.onclick = openMemberModal;
 
-    setTimeout(() => addBatchTopbarButton(), 50);
+    const batchButton = document.createElement("button");
+    batchButton.id = "openBatchAdd";
+    batchButton.className = "secondary-btn";
+    batchButton.textContent = "Batch Add";
+    batchButton.onclick = showBatchAddPanel;
+
+    headerActions.appendChild(batchButton);
+  } else if (page === "assets") {
+    topbarButton.style.display = "block";
+    topbarButton.textContent = "+ Add Asset";
+    topbarButton.onclick = openAssetModal;
+  } else {
+    topbarButton.style.display = "none";
+    topbarButton.onclick = null;
   }
 }
 
@@ -509,8 +852,11 @@ function getPrettyDateTime(dateString) {
 }
 
 // ---------- Dashboard ----------
+
 function getDashboardQuals(member) {
   const quals = [];
+
+  if (member.quals?.includes("CDO")) quals.push("CDO");
 
   if (member.quals?.includes("OOD")) quals.push("OOD");
 
@@ -526,6 +872,7 @@ function getDashboardQuals(member) {
 
   return quals.join(" | ");
 }
+
 
 function getDashboardDisplay(member) {
   const rank = member.rank || "";
@@ -574,6 +921,7 @@ function getUpcomingLosses() {
 
 function renderDashboard() {
   const currentDutySection = getDutySectionForDate(dashboardDutyDate);
+  const currentCdo = getCdoForDate(dashboardDutyDate);
   const portCrew = getGroup("PORT");
   const stbdCrew = getGroup("STBD");
   const upcomingLosses = getUpcomingLosses();
@@ -590,16 +938,38 @@ function renderDashboard() {
   content.innerHTML = `
     <section class="dashboard-grid">
       <div class="panel wide">
-        <div class="dashboard-date-card">
-          <p class="dashboard-date-label">CURRENT DASHBOARD VIEW</p>
+        <div class="dashboard-date-header">
 
-          <h2>${getPrettyDateTime(dashboardDutyDate)}</h2>
+          <div class="dashboard-date-left">
+            <p class="dashboard-date-label">
+              CURRENT DASHBOARD VIEW
+            </p>
 
-          <p>
-            <strong>Duty Section:</strong> ${currentDutySection}
-            |
-            <strong>Rotation:</strong> ${rotationSettings.pattern}
-          </p>
+            <h2>
+              ${getPrettyDateTime(dashboardDutyDate)}
+            </h2>
+
+            <p>
+              <strong>Duty Section:</strong> ${currentDutySection}
+              |
+              <strong>Rotation:</strong> ${rotationSettings.pattern}
+            </p>
+          </div>
+
+          <div class="dashboard-cdo-box">
+            <p class="dashboard-date-label">
+              COMMAND DUTY OFFICER
+            </p>
+
+            <h3>
+              ${
+                currentCdo
+                  ? getFullDisplayName(currentCdo)
+                  : "No CDO Assigned"
+              }
+            </h3>
+          </div>
+
         </div>
 
         <div class="dashboard-date-actions">
@@ -918,6 +1288,7 @@ function renderCalendar() {
     const section = getDutySectionForDate(dateString);
     const hasOverride = !!dutyOverrides[dateString];
     const plannedForDay = getPlannedCrewsForDate(dateString);
+    const dayCdo = getCdoForDate(dateString);
 
     cells += `
       <div
@@ -928,6 +1299,10 @@ function renderCalendar() {
 
         <div class="calendar-duty">
           ${section}
+        </div>
+
+        <div class="calendar-cdo">
+          CDO: ${dayCdo ? dayCdo.lastName || getFullDisplayName(dayCdo) : "None"}
         </div>
 
         ${
@@ -1143,13 +1518,76 @@ function renderBatchAddRow() {
   `;
 }
 
+function renderRosterGroup(group) {
+  const members = getGroup(group.value);
+
+  return `
+    <div class="panel roster-panel ${group.className}">
+      <h3>${group.title}</h3>
+
+      ${
+        members.length === 0
+          ? `<p class="empty-text">No personnel assigned.</p>`
+          : members.map(member => {
+              const index = crew.indexOf(member);
+
+              return `
+                <div class="member-card">
+                  <div class="member-header">
+                    <div>
+                      <h4>${getFullDisplayName(member)}</h4>
+                      ${member.title ? `<p class="member-title">${member.title}</p>` : ""}
+                      <p>${member.dept} | ${member.status}</p>
+                    </div>
+
+                    <div class="member-actions">
+                      <button class="action-btn" onclick="viewPersonnelDetails(${index})">Details</button>
+                      <button class="action-btn" onclick="editMember(${index})">Edit</button>
+                      <button class="action-btn delete-btn" onclick="deleteMember(${index})">Delete</button>
+                    </div>
+                  </div>
+
+                  <div class="qual-row">
+                    ${(member.quals || []).map(qual => `
+                      <span class="badge ${qual === "CDO" ? "cdo-badge" : ""}">
+                        ${qual}
+                      </span>
+                    `).join("")}
+                  </div>
+
+                  ${
+                    member.collaterals && member.collaterals.length > 0
+                      ? `<div class="qual-row">
+                          ${member.collaterals.map(c => `<span class="badge collateral-badge">${c}</span>`).join("")}
+                        </div>`
+                      : ""
+                  }
+
+                  ${
+                    member.lossDate && member.lossReason && member.lossReason !== "None"
+                      ? `<p class="member-notes"><strong>Projected Loss:</strong> ${member.lossReason} on ${member.lossDate}</p>`
+                      : ""
+                  }
+
+                  ${member.notes ? `<p class="member-notes">${member.notes}</p>` : ""}
+                </div>
+              `;
+            }).join("")
+      }
+    </div>
+  `;
+}
+
 function renderCrewRoster() {
   pageTitle.textContent = "Crew Roster";
   pageSubtitle.textContent = "Personnel grouped by section and sorted by rank";
 
-  const groups = [
+  const topGroups = [
     { title: "PORT Section", value: "PORT", className: "port-panel" },
-    { title: "STBD Section", value: "STBD", className: "stbd-panel" },
+    { title: "STBD Section", value: "STBD", className: "stbd-panel" }
+  ];
+
+  const lowerGroups = [
     { title: "Day Workers", value: "Day Worker", className: "" },
     { title: "Reservists", value: "Reservist", className: "" },
     { title: "TDY to Station", value: "TDY to Station", className: "" }
@@ -1157,62 +1595,39 @@ function renderCrewRoster() {
 
   content.innerHTML = `
 
-    <section class="roster-grid">
-      ${groups.map(group => {
-        const members = getGroup(group.value);
+    <section class="cards">
+      <div class="card">
+        <p>Total Station Personnel</p>
+        <h3>${crew.length}</h3>
+      </div>
 
-        return `
-          <div class="panel roster-panel ${group.className}">
-            <h3>${group.title}</h3>
+      <div class="card port-card">
+        <p>PORT</p>
+        <h3>${getGroup("PORT").length}</h3>
+      </div>
 
-            ${
-              members.length === 0
-                ? `<p class="empty-text">No personnel assigned.</p>`
-                : members.map(member => {
-                    const index = crew.indexOf(member);
+      <div class="card stbd-card">
+        <p>STBD</p>
+        <h3>${getGroup("STBD").length}</h3>
+      </div>
 
-                    return `
-                      <div class="member-card">
-                        <div class="member-header">
-                          <div>
-                            <h4>${getFullDisplayName(member)}</h4>
-                            ${member.title ? `<p class="member-title">${member.title}</p>` : ""}
-                            <p>${member.dept} | ${member.status}</p>
-                          </div>
+      <div class="card">
+        <p>CDO Qualified</p>
+        <h3>${getCdoQualifiedMembers().length}</h3>
+      </div>
+    </section>
+    
+    <section class="roster-grid roster-row">
+      ${topGroups.map(group => renderRosterGroup(group)).join("")}
+    </section>
 
-                          <div class="member-actions">
-                            <button class="action-btn" onclick="viewPersonnelDetails(${index})">Details</button>
-                            <button class="action-btn" onclick="editMember(${index})">Edit</button>
-                            <button class="action-btn delete-btn" onclick="deleteMember(${index})">Delete</button>
-                          </div>
-                        </div>
+    <section class="roster-grid roster-row">
+      ${renderRosterGroup(lowerGroups[0])}
+      ${renderCdoManagementBox()}
+    </section>
 
-                        <div class="qual-row">
-                          ${(member.quals || []).map(qual => `<span class="badge">${qual}</span>`).join("")}
-                        </div>
-
-                        ${
-                          member.collaterals && member.collaterals.length > 0
-                            ? `<div class="qual-row">
-                                ${member.collaterals.map(c => `<span class="badge collateral-badge">${c}</span>`).join("")}
-                              </div>`
-                            : ""
-                        }
-
-                        ${
-                          member.lossDate && member.lossReason && member.lossReason !== "None"
-                            ? `<p class="member-notes"><strong>Projected Loss:</strong> ${member.lossReason} on ${member.lossDate}</p>`
-                            : ""
-                        }
-
-                        ${member.notes ? `<p class="member-notes">${member.notes}</p>` : ""}
-                      </div>
-                    `;
-                  }).join("")
-            }
-          </div>
-        `;
-      }).join("")}
+    <section class="roster-grid roster-row">
+      ${lowerGroups.slice(1).map(group => renderRosterGroup(group)).join("")}
     </section>
   `;
 }
@@ -1865,6 +2280,7 @@ function renderDutySections() {
   const portCrew = getGroup("PORT");
   const stbdCrew = getGroup("STBD");
   const dayWorkers = getGroup("Day Worker");
+  const cdoQualified = getCdoQualifiedMembers();
 
   pageTitle.textContent = "Duty Sections";
   pageSubtitle.textContent = "PORT, STBD, and Day Worker staffing overview";
@@ -1873,6 +2289,22 @@ function renderDutySections() {
     <section class="dashboard-grid">
       ${renderSectionAnalysisPanel("PORT Section", portCrew, "port-panel")}
       ${renderSectionAnalysisPanel("STBD Section", stbdCrew, "stbd-panel")}
+
+      <div class="panel wide">
+        <h3>CDO Qualified Personnel</h3>
+
+        ${
+          cdoQualified.length === 0
+            ? `<p class="empty-text">No CDO-qualified personnel listed.</p>`
+            : `
+              <ul>
+                ${cdoQualified.map(member => `
+                  <li>${getFullDisplayName(member)} - ${member.section}</li>
+                `).join("")}
+              </ul>
+            `
+        }
+      </div>
 
       <div class="panel wide">
         <h3>Watch Keeper Notes</h3>
@@ -1919,6 +2351,7 @@ function renderSectionAnalysisPanel(title, members, extraClass) {
             <li>Deck: ${countDept(members, "Deck")}</li>
             <li>Engineering: ${countDept(members, "Engineering")}</li>
             <li>LE Qualified: ${countLEQualified(members)}</li>
+            <li>CDO Qualified: ${countCdoQualified(members)}</li>
           </ul>
         </div>
       </div>
@@ -2422,7 +2855,7 @@ function renderAssets() {
       </div>
     </section>
 
-    <section class="roster-grid">
+    <section class="roster-grid roster-row">
       ${
         sortedAssets.length === 0
           ? `<div class="panel wide"><p class="empty-text">No assets added.</p></div>`
@@ -4285,9 +4718,54 @@ function renderLeave() {
       </div>
 
       <div class="panel wide">
-        <h3>Leave Calendar</h3>
-        ${renderLeaveCalendarMini()}
-      </div}
+        <h3>Run Leave Scenario</h3>
+
+        <p class="member-notes">
+          Preview readiness impact.
+        </p>
+
+        <label>Member</label>
+        <select id="leaveScenarioMember">
+          ${
+            crew.length === 0
+              ? `<option value="">No personnel added.</option>`
+              : crew.map((member, index) => `
+                  <option value="${index}">
+                    ${getFullDisplayName(member)} - ${member.section}
+                  </option>
+                `).join("")
+          }
+        </select>
+
+        <label>Leave Type</label>
+        <select id="leaveScenarioType">
+          <option>Special Liberty</option>
+          <option>Parental Leave</option>
+          <option>Emergency Leave</option>
+          <option>INCONUS Leave</option>
+          <option>OCONUS Leave</option>
+          <option>TDY</option>
+          <option>School</option>
+          <option>Medical</option>
+        </select>
+
+        <label>Start Date</label>
+        <input id="leaveScenarioStartDate" type="date">
+
+        <label>End Date</label>
+        <input id="leaveScenarioEndDate" type="date">
+
+        <button class="primary-btn" onclick="runLeaveScenario()">
+          Run Scenario
+        </button>
+
+        <div id="leaveScenarioResult"></div>
+      </div>
+
+      <div class="panel wide">
+        <h3>Leave Matrix</h3>
+        ${renderLeaveMatrix()}
+      </div>
 
       <div class="panel wide">
         <h3>Availability Scenario</h3>
@@ -4352,9 +4830,558 @@ function renderLeave() {
               }).join("")
         }
       </div>
+
+      <div class="panel wide">
+        <h3>Leave Color Settings</h3>
+
+        ${Object.keys(leaveColorSettings).map(type => `
+          <div class="setting-row">
+            <label>${type}</label>
+
+            <input
+              type="color"
+              value="${leaveColorSettings[type]}"
+              onchange="updateLeaveColorSetting('${type}', this.value)"
+            >
+          </div>
+        `).join("")}
+      </div>
+      
     </section>
   `;
 }
+
+window.toggleLeaveMatrixViewMode = function() {
+  leaveMatrixViewMode =
+    leaveMatrixViewMode === "normal"
+      ? "full"
+      : "normal";
+
+  renderLeave();
+};
+
+function renderSelectedLeaveMatrixDetails() {
+  const item = leaveItems.find(
+    item => item.id === selectedLeaveMatrixItemId
+  );
+
+  if (!item) return "";
+
+  const member = crew[item.memberIndex];
+
+  return `
+    <div class="scenario-summary">
+      <h4>Selected Leave Entry</h4>
+
+      <p>
+        <strong>Member:</strong>
+        ${member ? getFullDisplayName(member) : "Unknown Member"}
+      </p>
+
+      <p>
+        <strong>Leave Type:</strong>
+        ${item.leaveType}
+      </p>
+
+      <p>
+        <strong>Dates:</strong>
+        ${item.startDate} through ${item.endDate}
+      </p>
+
+      ${
+        item.notes
+          ? `
+            <p>
+              <strong>Notes:</strong>
+              ${item.notes}
+            </p>
+          `
+          : ""
+      }
+
+      <div class="dashboard-date-actions">
+        <button class="secondary-btn" onclick="editSelectedLeaveMatrixItem()">
+          Edit Leave
+        </button>
+
+        <button class="delete-btn" onclick="deleteSelectedLeaveMatrixItem()">
+          Delete Leave
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+window.editSelectedLeaveMatrixItem = function() {
+  const item = leaveItems.find(item => item.id === selectedLeaveMatrixItemId);
+  if (!item) return;
+
+  editingLeaveItemId = item.id;
+
+  document.getElementById("leaveMember").value = item.memberIndex;
+  document.getElementById("leaveType").value = item.leaveType;
+  document.getElementById("leaveStartDate").value = item.startDate;
+  document.getElementById("leaveEndDate").value = item.endDate;
+  document.getElementById("leaveNotes").value = item.notes || "";
+
+  document.getElementById("saveLeaveButton").textContent = "Update Leave Entry";
+};
+
+function editSelectedLeaveMatrixItem() {
+  const item = leaveItems.find(item => item.id === selectedLeaveMatrixItemId);
+  if (!item) return;
+
+  // Implement the logic to edit the selected leave matrix item
+}
+
+function deleteSelectedLeaveMatrixItem() {
+  const item = leaveItems.find(item => item.id === selectedLeaveMatrixItemId);
+  if (!item) return;
+
+  // Implement the logic to delete the selected leave matrix item
+}
+
+function getLeaveTypeCode(leaveType) {
+  const codes = {
+    "INCONUS Leave": "EL",
+    "OCONUS Leave": "EL",
+    "Special Liberty": "SL",
+    "Emergency Leave": "EMER",
+    "Medical": "MED",
+    "TDY": "TDY",
+    "School": "SCH",
+    "Parental Leave": "PAR"
+  };
+
+  return codes[leaveType] || leaveType;
+}
+
+window.updateLeaveColorSetting = function(type, color) {
+  leaveColorSettings[type] = color;
+  saveLeaveColorSettings();
+  renderLeave();
+};
+
+window.runLeaveScenario = function() {
+  const memberIndex = Number(document.getElementById("leaveScenarioMember").value);
+  const member = crew[memberIndex];
+
+  const leaveType = document.getElementById("leaveScenarioType").value;
+  const startDate = document.getElementById("leaveScenarioStartDate").value;
+  const endDate = document.getElementById("leaveScenarioEndDate").value;
+
+  const resultBox = document.getElementById("leaveScenarioResult");
+
+  if (!member || !startDate || !endDate) {
+    resultBox.innerHTML = `
+      <div class="scenario-readiness not-ready-panel">
+        Select a member, start date, and end date.
+      </div>
+    `;
+    return;
+  }
+
+  const simulatedLeave = {
+    id: Date.now(),
+    memberIndex,
+    leaveType,
+    startDate,
+    endDate,
+    notes: "Scenario only"
+  };
+
+  const originalLeaveItems = [...leaveItems];
+  leaveItems.push(simulatedLeave);
+
+  const section = member.section;
+  const startResult = checkReadinessFromLeaveDate(section, startDate);
+
+  leaveItems = originalLeaveItems;
+
+  resultBox.innerHTML = `
+    <div class="scenario-summary">
+      <h4>Leave Scenario Result</h4>
+
+      <p>
+        <strong>${getFullDisplayName(member)}</strong>
+        would be marked as <strong>${leaveType}</strong>
+        from ${startDate} to ${endDate}.
+      </p>
+
+      ${renderLeaveScenarioImpact(section, startDate, endDate)}
+
+      <button class="secondary-btn" onclick="saveScenarioAsLeave()">
+        Save This Leave Entry
+      </button>
+    </div>
+  `;
+
+  window.pendingLeaveScenario = simulatedLeave;
+};
+
+function getMinimumStandbyPlan(missingQuals, standbyOptions) {
+  let remainingQuals = [...missingQuals];
+  let availableStandbys = [...new Set(standbyOptions)];
+  const plan = [];
+
+  while (remainingQuals.length > 0 && availableStandbys.length > 0) {
+    let bestMember = null;
+    let bestCoverage = [];
+
+    availableStandbys.forEach(member => {
+      const coverage = remainingQuals.filter(req =>
+        memberHasQual(member, req)
+      );
+
+      if (coverage.length > bestCoverage.length) {
+        bestMember = member;
+        bestCoverage = coverage;
+      }
+    });
+
+    if (!bestMember || bestCoverage.length === 0) break;
+
+    plan.push({
+      member: bestMember,
+      covers: bestCoverage
+    });
+
+    remainingQuals = remainingQuals.filter(req =>
+      !bestCoverage.includes(req)
+    );
+
+    availableStandbys = availableStandbys.filter(member =>
+      member !== bestMember
+    );
+  }
+
+  return {
+    plan,
+    unresolved: remainingQuals
+  };
+}
+
+function getLeaveTypeColor(leaveType) {
+  return leaveColorSettings[leaveType] || "#64748b";
+}
+
+function renderLeaveMatrix() {
+  const data = getLeaveMatrixMonthData();
+
+  const groups = [
+    { title: "PORT", members: getGroup("PORT") },
+    { title: "STBD", members: getGroup("STBD") },
+    { title: "Day Workers", members: getGroup("Day Worker") },
+    { title: "Reservists", members: getGroup("Reservist") },
+    { title: "TDY to Station", members: getGroup("TDY to Station") }
+  ];
+
+  return `
+    <div class="calendar-header">
+      <button class="secondary-btn" onclick="toggleLeaveMatrixViewMode()">
+        ${leaveMatrixViewMode === "normal" ? "Full Month View" : "Scrollable View"}
+      </button>
+      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(-1)">Previous</button>
+      <h3>${data.monthName} ${data.year}</h3>
+      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(1)">Next</button>
+    </div>
+
+    <div class="leave-matrix ${leaveMatrixViewMode === "full" ? "full-month" : ""}">
+      <div class="leave-matrix-header">
+        <div class="leave-name-cell">Name</div>
+        ${Array.from({ length: data.daysInMonth }, (_, i) => `
+          <div class="leave-day-cell">${i + 1}</div>
+        `).join("")}
+      </div>
+
+      ${groups.map(group => `
+        <div class="leave-section-row">${group.title}</div>
+
+        ${
+          group.members.length === 0
+            ? ""
+            : group.members.map(member => `
+                <div class="leave-matrix-row">
+                  <div class="leave-name-cell">
+                    ${getFullDisplayName(member)}
+                  </div>
+
+                  ${Array.from({ length: data.daysInMonth }, (_, i) => {
+                    const day = i + 1;
+                    const dateString =
+                      data.year +
+                      "-" +
+                      String(data.month + 1).padStart(2, "0") +
+                      "-" +
+                      String(day).padStart(2, "0");
+
+                    const memberIndex = crew.indexOf(member);
+                    const leaveForDay = leaveItems.find(item =>
+                      item.memberIndex === memberIndex &&
+                      dateString >= item.startDate &&
+                      dateString <= item.endDate
+                    );
+
+                    return `
+                      <div
+                        class="leave-day-cell leave-entry-cell"
+                        onclick="${leaveForDay ? `selectLeaveMatrixItem(${leaveForDay.id})` : ""}"
+                        style="${leaveForDay ? `background:${getLeaveTypeColor(leaveForDay.leaveType)};` : ""}"
+                        title="${leaveForDay ? `${leaveForDay.leaveType} | ${leaveForDay.startDate} to ${leaveForDay.endDate}` : ""}"
+                      >
+                        ${
+                          leaveForDay
+                            ? `${leaveForDay ? getLeaveTypeCode(leaveForDay.leaveType) : ""}`
+                            : ""
+                        }
+                      </div>
+                    `;
+                  }).join("")}
+                </div>
+              `).join("")}
+        }
+      `).join("")}
+    </div>
+
+    ${renderSelectedLeaveMatrixDetails()}
+
+    <div class="leave-legend">
+      ${Object.keys(leaveColorSettings).map(type => `
+        <div class="leave-legend-item">
+          <span
+            class="leave-legend-color"
+            style="background:${getLeaveTypeColor(type)}"
+          ></span>
+          ${getLeaveTypeCode(type)} - ${type}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function getLeaveMatrixMonthData() {
+  const firstDay = new Date(calendarYear, calendarMonth, 1);
+  const lastDay = new Date(calendarYear, calendarMonth + 1, 0);
+
+  return {
+    year: calendarYear,
+    month: calendarMonth,
+    monthName: firstDay.toLocaleString("default", { month: "long" }),
+    daysInMonth: lastDay.getDate()
+  };
+}
+
+window.selectLeaveMatrixItem = function(id) {
+  selectedLeaveMatrixItemId = id;
+  renderLeave();
+};
+
+
+function renderLeaveScenarioImpact(section, startDate, endDate) {
+  const rangeImpact = getLeaveScenarioRangeImpact(section, startDate, endDate);
+
+  if (rangeImpact.worstLevel === "Green") {
+    return `
+      <div class="scenario-readiness ready-panel">
+        Green - No readiness impact detected for ${section} during this date range.
+      </div>
+    `;
+  }
+
+  const impactedDaysHTML = rangeImpact.dailyResults
+    .filter(item => item.level !== "Green")
+    .map(item => {
+      const standbyPlan = getMinimumStandbyPlan(
+        item.missing,
+        item.standbyOptions
+      );
+
+      const coverage = getStandbyCoverageGroups(
+        item.missing,
+        item.standbyOptions
+      );
+
+      return `
+        <li>
+          <strong>${item.dateString}:</strong>
+          Missing ${item.missing.join(", ")}
+
+          <div class="scenario-summary">
+            <h4>Recommended Standby Plan</h4>
+
+            ${
+              standbyPlan.plan.length === 0
+                ? `<p>No standby recommendation available.</p>`
+                : `
+                  <ol>
+                    ${standbyPlan.plan.map(step => `
+                      <li>
+                        <strong>${getFullDisplayName(step.member)}</strong>
+                        - Covers: ${step.covers.join(", ")}
+                      </li>
+                    `).join("")}
+                  </ol>
+
+                  <p>
+                    <strong>Minimum Personnel Required:</strong>
+                    ${standbyPlan.plan.length}
+                  </p>
+                `
+            }
+
+            ${
+              standbyPlan.unresolved.length > 0
+                ? `
+                  <p class="member-notes">
+                    Still unresolved:
+                    ${standbyPlan.unresolved.join(", ")}
+                  </p>
+                `
+                : ""
+            }
+          </div>
+
+          <div class="member-notes">
+            <strong>Fallback Options:</strong>
+          </div>
+
+          ${coverage.partialCoverage.map(group => `
+            <div class="member-notes">
+              <strong>${group.qual} coverage:</strong>
+              ${
+                group.options.length === 0
+                  ? "No standby found"
+                  : group.options.map(member => getFullDisplayName(member)).join(", ")
+              }
+            </div>
+          `).join("")}
+        </li>
+      `;
+    }).join("");
+
+  if (rangeImpact.worstLevel === "Amber") {
+    return `
+      <div class="scenario-readiness warning-panel">
+        Amber - Standby coverage may be needed during this date range.
+
+        <ul>
+          ${impactedDaysHTML}
+        </ul>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="scenario-readiness not-ready-panel">
+      Red - Readiness impact detected during this date range.
+
+      <ul>
+        ${impactedDaysHTML}
+      </ul>
+    </div>
+  `;
+}
+
+function getStandbyCoverageGroups(missingQuals, standbyOptions) {
+  const uniqueStandbys = [];
+
+  standbyOptions.forEach(member => {
+    if (!uniqueStandbys.includes(member)) {
+      uniqueStandbys.push(member);
+    }
+  });
+
+  const fullCoverage = uniqueStandbys.filter(member =>
+    missingQuals.every(req => memberHasQual(member, req))
+  );
+
+  const partialCoverage = missingQuals.map(req => {
+    const options = uniqueStandbys.filter(member =>
+      memberHasQual(member, req)
+    );
+
+    return {
+      qual: req,
+      options
+    };
+  });
+
+  return {
+    fullCoverage,
+    partialCoverage
+  };
+}
+
+function getDateRangeStrings(startDate, endDate) {
+  const dates = [];
+
+  const current = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+
+  while (current <= end) {
+    dates.push(getLocalDateString(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function getLeaveScenarioRangeImpact(section, startDate, endDate) {
+  const dates = getDateRangeStrings(startDate, endDate);
+
+  const dailyResults = dates.map(dateString => {
+    const result = checkReadinessFromLeaveDate(section, dateString);
+    const simulatedCrew = getCrewWithLeaveApplied(dateString);
+
+    const standbyOptions = result.ready
+      ? []
+      : result.missing.flatMap(req =>
+          getDayWorkerOptionsFromList(req, simulatedCrew)
+        );
+
+    let level = "Green";
+
+    if (!result.ready && standbyOptions.length > 0) {
+      level = "Amber";
+    }
+
+    if (!result.ready && standbyOptions.length === 0) {
+      level = "Red";
+    }
+
+    return {
+      dateString,
+      level,
+      missing: result.missing || [],
+      standbyOptions
+    };
+  });
+
+  const worstLevel = dailyResults.some(item => item.level === "Red")
+    ? "Red"
+    : dailyResults.some(item => item.level === "Amber")
+      ? "Amber"
+      : "Green";
+
+  return {
+    worstLevel,
+    dailyResults
+  };
+}
+
+window.saveScenarioAsLeave = function() {
+  if (!window.pendingLeaveScenario) return;
+
+  leaveItems.push({
+    ...window.pendingLeaveScenario,
+    id: Date.now(),
+    notes: ""
+  });
+
+  saveLeaveItems();
+  window.pendingLeaveScenario = null;
+  renderLeave();
+};
 
 window.addLeaveItem = function() {
   const memberIndex = Number(document.getElementById("leaveMember").value);
@@ -4378,6 +5405,25 @@ window.addLeaveItem = function() {
     );
 
     if (!continueSave) return;
+  }
+
+  if (editingLeaveItemId !== null) {
+    const existingItem = leaveItems.find(item => item.id === editingLeaveItemId);
+
+    if (existingItem) {
+      existingItem.memberIndex = memberIndex;
+      existingItem.leaveType = leaveType;
+      existingItem.startDate = startDate;
+      existingItem.endDate = endDate;
+      existingItem.notes = notes;
+    }
+
+    editingLeaveItemId = null;
+    selectedLeaveMatrixItemId = null;
+
+    saveLeaveItems();
+    renderLeave();
+    return;
   }
 
   leaveItems.push({
@@ -4519,7 +5565,7 @@ function renderLeaveCalendarMini() {
 
         ${
           leaveForDay.length === 0
-            ? `<div class="calendar-crews"><span>No Leave</span></div>`
+            ? `<div class="calendar-crews"><span></span></div>`
             : `
               <div class="calendar-crews">
                 ${leaveForDay.slice(0, 2).map(item => {
@@ -6184,6 +7230,59 @@ function renderSettings() {
 
         <button class="primary-btn settings-btn" onclick="saveDutyRotationSettings()">
           Save Duty Rotation
+        </button>
+      </div>
+
+      <div class="panel wide">
+        <h3>CDO Rotation Settings</h3>
+
+        <label>Rotation Start Date</label>
+        <input id="cdoStartDate" type="date" value="${cdoSettings.startDate}">
+
+        <label>Rotation Length</label>
+        <select id="cdoRotationLength">
+          <option value="1" ${Number(cdoSettings.rotationLengthDays) === 1 ? "selected" : ""}>Daily</option>
+          <option value="7" ${Number(cdoSettings.rotationLengthDays) === 7 ? "selected" : ""}>Weekly</option>
+          <option value="14" ${Number(cdoSettings.rotationLengthDays) === 14 ? "selected" : ""}>Every 2 Weeks</option>
+        </select>
+
+        <label>CDO Notes</label>
+        <textarea id="cdoNotes" placeholder="Example: BM1 Smith assumes CDO two days early">${cdoSettings.notes || ""}</textarea>
+
+        <button class="primary-btn" onclick="saveCdoRotationSettings()">
+          Save CDO Settings
+        </button>
+      </div>
+
+      <div class="panel wide">
+        <h3>Manual CDO Date Assignment</h3>
+
+        <label>Date</label>
+        <input id="manualCdoDate" type="date" value="${dashboardDutyDate}">
+
+        <label>CDO</label>
+        <select id="manualCdoMember">
+          ${
+            getCdoQualifiedMembers().length === 0
+              ? `<option value="">No CDO-qualified personnel found.</option>`
+              : getCdoQualifiedMembers().map(member => {
+                  const index = getCdoQualifiedMembers().indexOf(member);
+
+                  return `
+                    <option value="${index}">
+                      ${getFullDisplayName(member)}
+                    </option>
+                  `;
+                }).join("")
+          }
+        </select>
+
+        <button class="primary-btn" onclick="saveManualCdoAssignment()">
+          Save Manual CDO Assignment
+        </button>
+
+        <button class="secondary-btn" onclick="clearManualCdoAssignment()">
+          Clear Manual Assignment for Date
         </button>
       </div>
 
