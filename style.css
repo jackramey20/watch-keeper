@@ -205,28 +205,28 @@ nav {
 }
 
 .member-header {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: flex-start;
 }
 
-.member-header h4 {
-  margin: 0;
-  font-size: 18px;
+.member-header > div:first-child {
+  min-width: 0;
 }
 
+.member-header h4,
 .member-header p {
-  margin: 5px 0 0;
-  color: #94a3b8;
-  font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .member-actions {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  white-space: nowrap;
 }
 
 .qual-row {
@@ -267,8 +267,18 @@ nav {
 }
 
 .delete-btn {
-  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.75);
   color: #fecaca;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.32);
+  color: white;
 }
 
 .modal {
@@ -378,6 +388,10 @@ textarea {
 
 .ready-panel {
   border-color: #22c55e;
+}
+
+.warning-panel {
+  border-color: #f59e0b;
 }
 
 .not-ready-panel {
@@ -1222,4 +1236,152 @@ details[open] summary {
   .batch-add-row {
     grid-template-columns: 1fr;
   }
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dashboard-date-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+}
+
+.dashboard-date-left {
+  flex: 1;
+}
+
+.dashboard-cdo-box {
+  min-width: 250px;
+  padding: 15px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.15);
+  text-align: center;
+}
+
+.dashboard-cdo-box h3 {
+  margin-top: 8px;
+}
+
+.calendar-cdo {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.current-cdo-row {
+  border-color: #facc15;
+  background: rgba(250, 204, 21, 0.12);
+}
+
+.roster-row {
+  margin-top: 18px;
+}
+
+.leave-matrix {
+  overflow-x: auto;
+  border: 1px solid #334155;
+  border-radius: 14px;
+}
+
+.leave-matrix-header,
+.leave-matrix-row {
+  display: grid;
+  grid-template-columns: 220px repeat(31, 70px);
+  min-width: max-content;
+}
+
+.leave-name-cell,
+.leave-day-cell {
+  border-right: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+  padding: 8px;
+  min-height: 38px;
+  font-size: 12px;
+}
+
+.leave-name-cell {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #111827;
+  font-weight: bold;
+}
+
+.leave-matrix-header .leave-name-cell,
+.leave-matrix-header .leave-day-cell {
+  background: #020617;
+  font-weight: bold;
+  text-align: center;
+}
+
+.leave-section-row {
+  min-width: max-content;
+  background: #1e293b;
+  color: #facc15;
+  font-weight: bold;
+  padding: 8px 12px;
+  border-bottom: 1px solid #334155;
+}
+
+.leave-entry-cell {
+  text-align: center;
+  font-weight: bold;
+  color: white;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.setting-row input[type="color"] {
+  height: 44px;
+  padding: 4px;
+}
+
+.leave-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 14px;
+}
+
+.leave-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.leave-legend-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid #334155;
+}
+
+.leave-matrix.full-month .leave-matrix-header,
+.leave-matrix.full-month .leave-matrix-row {
+  grid-template-columns: 180px repeat(31, minmax(28px, 1fr));
+  min-width: 100%;
+}
+
+.leave-matrix.full-month .leave-day-cell {
+  font-size: 10px;
+  padding: 4px;
+}
+
+.leave-matrix.full-month .leave-name-cell {
+  font-size: 11px;
 }
