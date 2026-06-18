@@ -35,6 +35,8 @@ let calendarMonth = new Date().getMonth();
 let calendarYear = new Date().getFullYear();
 let qualificationFilter = "All";
 let workListFilter = "All";
+let rosterSearch = "";
+let missionPersonnelSearch = "";
 
 let leaveColorSettings =
   JSON.parse(localStorage.getItem("watchKeeperLeaveColorSettings"))
@@ -56,8 +58,43 @@ let workItems =
 let rotationSettings = JSON.parse(localStorage.getItem("watchKeeperRotationSettings")) || {
   currentSection: "PORT",
   dutyStartDate: new Date().toISOString().slice(0, 10),
-  pattern: "2-on-2-off"
+  pattern: "2-on-2-off",
+  swapTime: "07:00",
+  sections: [
+    { name: "PORT", color: "#ef4444" },
+    { name: "STBD", color: "#22c55e" },
+    { name: "CHARLIE", color: "#3b82f6" },
+    { name: "DELTA", color: "#a855f7" }
+  ]
 };
+
+const defaultDutySections = [
+  { name: "PORT", color: "#ef4444" },
+  { name: "STBD", color: "#22c55e" },
+  { name: "CHARLIE", color: "#3b82f6" },
+  { name: "DELTA", color: "#a855f7" }
+];
+
+if (!Array.isArray(rotationSettings.sections)) {
+  rotationSettings.sections = defaultDutySections.map(section => ({ ...section }));
+}
+
+defaultDutySections.forEach((section, index) => {
+  if (!rotationSettings.sections[index]) {
+    rotationSettings.sections[index] = { ...section };
+  }
+});
+
+// Align existing two-section installations to the unit's known Pitman cycle.
+if (rotationSettings.pattern === "2-on-2-off" && rotationSettings.pitmanCycleVersion !== 2) {
+  rotationSettings.dutyStartDate = "2026-06-19";
+  rotationSettings.currentSection = rotationSettings.sections.find(section =>
+    section.name.toUpperCase() === "PORT"
+  )?.name || rotationSettings.sections[0].name;
+  rotationSettings.swapTime = "07:00";
+  rotationSettings.pitmanCycleVersion = 2;
+  localStorage.setItem("watchKeeperRotationSettings", JSON.stringify(rotationSettings));
+}
 
 let smartSettings = JSON.parse(localStorage.getItem("watchKeeperSmartSettings")) || {
   personnelBalance: true,
@@ -86,9 +123,147 @@ let smartSettings = JSON.parse(localStorage.getItem("watchKeeperSmartSettings"))
   showRecommendationReasons: true
 };
 
+let appSettings = JSON.parse(localStorage.getItem("watchKeeperAppSettings")) || {
+  timeFormat: "24",
+  zuluOffsetAhead: 4,
+  theme: "watchkeeper-default",
+  visiblePages: [
+    "dashboard",
+    "crew",
+    "worklist",
+    "assets",
+    "sections",
+    "readiness",
+    "scenarios",
+    "leave",
+    "qualifications",
+    "calendar",
+    "smart-settings",
+    "settings"
+  ]
+};
+
+if (!Array.isArray(appSettings.visiblePages)) {
+  appSettings.visiblePages = [
+    "dashboard", "crew", "worklist", "assets", "sections", "readiness",
+    "scenarios", "leave", "qualifications", "calendar", "smart-settings", "settings"
+  ];
+}
+
+if (!['12', '24'].includes(String(appSettings.timeFormat))) {
+  appSettings.timeFormat = "24";
+}
+
+if (!Number.isInteger(Number(appSettings.zuluOffsetAhead))) {
+  appSettings.zuluOffsetAhead = 4;
+}
+
+const appThemeDefinitions = {
+  "watchkeeper-default": {
+    label: "WatchKeeper Default",
+    colors: ["#0f172a", "#111827", "#2563eb", "#f59e0b", "#ef4444", "#e5e7eb"]
+  },
+  "coast-guard-blue": {
+    label: "Coast Guard Blue",
+    colors: ["#0c2340", "#16355b", "#00a3e0", "#ffb81c", "#d22630", "#ffffff"]
+  },
+  "cutter-cic": {
+    label: "Cutter CIC",
+    colors: ["#000000", "#111111", "#00ff88", "#ffff00", "#ff3333", "#e5ffe5"]
+  },
+  "government-light": {
+    label: "Government Light",
+    colors: ["#f1f5f9", "#ffffff", "#2563eb", "#f59e0b", "#dc2626", "#0f172a"]
+  },
+  "coast-guard-red": {
+    label: "Coast Guard Red",
+    colors: ["#1a1a1a", "#262626", "#d22630", "#ffb81c", "#ef4444", "#f8fafc"]
+  },
+  "operations-green": {
+    label: "Operations Green",
+    colors: ["#0b1410", "#14211b", "#22c55e", "#f59e0b", "#ef4444", "#ecfdf5"]
+  },
+  "tactical-night-vision": {
+    label: "Tactical Night Vision",
+    colors: ["#050505", "#101010", "#7fff00", "#d9ffb3", "#ff3333", "#d9ffb3"]
+  },
+  "noaa-maritime": {
+    label: "NOAA / Maritime",
+    colors: ["#082f49", "#0c4a6e", "#38bdf8", "#06b6d4", "#ef4444", "#f0f9ff"]
+  },
+  "custom": {
+    label: "Custom Palette",
+    colors: ["#0f172a", "#111827", "#2563eb", "#f59e0b", "#ef4444", "#e5e7eb"]
+  }
+};
+
+const defaultCustomTheme = {
+  appBg: "#0f172a",
+  sidebarBg: "#020617",
+  panelBg: "#111827",
+  panelAlt: "#1e293b",
+  fieldBg: "#020617",
+  textColor: "#e5e7eb",
+  mutedColor: "#94a3b8",
+  borderColor: "#334155",
+  accentColor: "#2563eb",
+  accentHover: "#1d4ed8",
+  accentText: "#ffffff",
+  secondaryColor: "#334155",
+  warningColor: "#f59e0b",
+  dangerColor: "#ef4444",
+  successColor: "#22c55e"
+};
+
+const customThemeVariableMap = {
+  appBg: "--app-bg",
+  sidebarBg: "--sidebar-bg",
+  panelBg: "--panel-bg",
+  panelAlt: "--panel-alt",
+  fieldBg: "--field-bg",
+  textColor: "--text-color",
+  mutedColor: "--muted-color",
+  borderColor: "--border-color",
+  accentColor: "--accent-color",
+  accentHover: "--accent-hover",
+  accentText: "--accent-text",
+  secondaryColor: "--secondary-color",
+  warningColor: "--warning-color",
+  dangerColor: "--danger-color",
+  successColor: "--success-color"
+};
+
+const customThemeFieldLabels = {
+  appBg: "App Background",
+  sidebarBg: "Sidebar",
+  panelBg: "Panels",
+  panelAlt: "Cards / Secondary Panels",
+  fieldBg: "Form Fields",
+  textColor: "Primary Text",
+  mutedColor: "Muted Text",
+  borderColor: "Borders",
+  accentColor: "Accent / Primary Button",
+  accentHover: "Accent Hover",
+  accentText: "Primary Button Text",
+  secondaryColor: "Secondary Buttons",
+  warningColor: "Warnings",
+  dangerColor: "Danger / Delete",
+  successColor: "Success / Ready"
+};
+
+appSettings.customTheme = {
+  ...defaultCustomTheme,
+  ...(appSettings.customTheme || {})
+};
+
+if (!appThemeDefinitions[appSettings.theme]) {
+  appSettings.theme = "watchkeeper-default";
+}
+
 let dashboardSectionView = null;
 let dashboardDutyDate = getLocalDateString();
 let selectedLeaveDate = getLocalDateString();
+let selectedCalendarDate = null;
 
 // ---------- DOM References ----------
 const content = document.getElementById("content");
@@ -106,8 +281,43 @@ const assetModal = document.getElementById("assetModal");
 const assetModalTitle = document.getElementById("assetModalTitle");
 
 // ---------- Constants ----------
-const trackedQuals = ["CDO", "OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR", "B/I"];
+const trackedQuals = [
+  "CDO", "OOD", "WCH", "PCX", "CX", "PG", "ENG", "BO", "BTM", "CR",
+  "TAC CXC", "TAC CR", "HWCXC", "SURFMAN", "B/I"
+];
 const readinessRequirements = ["OOD", "PCX", "PG", "ENG", "BO", "BTM"];
+const dutyPatternDefinitions = {
+  "2-on-2-off": {
+    label: "2-2-3 Pitman Style",
+    sectionCount: 2
+  },
+  "24-on-48-off": {
+    label: "24-48 Three-Section Style",
+    sectionCount: 3
+  },
+  "24-on-72-off": {
+    label: "24-72 Four-Section Style",
+    sectionCount: 4
+  },
+  "four-section-relief": {
+    label: "Four-Section Rotating Relief Style",
+    sectionCount: 4
+  }
+};
+const configurablePages = [
+  { id: "dashboard", label: "Dashboard", required: true },
+  { id: "crew", label: "Crew Roster" },
+  { id: "worklist", label: "Worklist" },
+  { id: "assets", label: "Assets" },
+  { id: "sections", label: "Duty Sections" },
+  { id: "readiness", label: "Readiness Check" },
+  { id: "scenarios", label: "Missions" },
+  { id: "leave", label: "Leave" },
+  { id: "qualifications", label: "Qualifications" },
+  { id: "calendar", label: "Calendar" },
+  { id: "smart-settings", label: "Smart Assignment" },
+  { id: "settings", label: "Settings", required: true }
+];
 
 const rankOrder = [
   "CO", "CDR", "LCDR", "LT", "LTJG", "ENS",
@@ -142,6 +352,10 @@ function saveRotationSettings() {
 
 function saveSmartSettings() {
   localStorage.setItem("watchKeeperSmartSettings", JSON.stringify(smartSettings));
+}
+
+function saveAppSettings() {
+  localStorage.setItem("watchKeeperAppSettings", JSON.stringify(appSettings));
 }
 
 function saveDutyOverrides() {
@@ -212,6 +426,363 @@ function getFullDisplayName(member) {
   return member.name || "Unnamed Member";
 }
 
+function formatTimeValue(timeValue) {
+  if (!timeValue) return "Not listed";
+  if (appSettings.timeFormat !== "12") return timeValue.replace(":", "");
+
+  const [hourText, minute = "00"] = timeValue.split(":");
+  const hour = Number(hourText);
+  if (!Number.isFinite(hour)) return timeValue;
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minute} ${period}`;
+}
+
+function parseTimeEntry(value) {
+  const input = String(value || "").trim().toUpperCase();
+  if (!input) return "";
+
+  if (appSettings.timeFormat === "12") {
+    const match = input.match(/^(\d{1,2})(?::?(\d{2}))?\s*(AM|PM)$/);
+    if (!match) return null;
+
+    let hour = Number(match[1]);
+    const minute = Number(match[2] || "00");
+    if (hour < 1 || hour > 12 || minute > 59) return null;
+    if (match[3] === "AM" && hour === 12) hour = 0;
+    if (match[3] === "PM" && hour !== 12) hour += 12;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  const match = input.match(/^(\d{1,2}):?(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function getTimeEntryPlaceholder() {
+  return appSettings.timeFormat === "12" ? "Example: 3:00 PM" : "HHMM - Example: 1500";
+}
+
+window.normalizeTimeInput = function(input) {
+  const parsed = parseTimeEntry(input.value);
+  if (parsed === null) {
+    input.setCustomValidity(
+      appSettings.timeFormat === "12"
+        ? "Enter a time such as 3:00 PM."
+        : "Enter four-digit 24-hour time such as 1500."
+    );
+    return false;
+  }
+
+  input.setCustomValidity("");
+  input.value = parsed ? formatTimeValue(parsed) : "";
+  return true;
+};
+
+function getMilitaryZoneLetterForZuluAhead(offsetAhead) {
+  const letters = ["Z", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y"];
+  return letters[Math.max(0, Math.min(12, Number(offsetAhead) || 0))];
+}
+
+function formatMilitaryClock(date) {
+  return `${String(date.getHours()).padStart(2, "0")}${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatLocalStatusClock(date) {
+  if (appSettings.timeFormat !== "12") return formatMilitaryClock(date);
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  });
+}
+
+function updateZuluStatus() {
+  const statusBox = document.getElementById("zuluStatus");
+  if (!statusBox) return;
+
+  const offsetAhead = Math.max(0, Math.min(12, Number(appSettings.zuluOffsetAhead) || 0));
+  const localNow = new Date();
+  const zuluNow = new Date(localNow.getTime() + offsetAhead * 60 * 60 * 1000);
+  const zoneLetter = getMilitaryZoneLetterForZuluAhead(offsetAhead);
+
+  statusBox.innerHTML = `
+    <p>Zulu Status</p>
+    <div><span>Current:</span><strong>+${offsetAhead}${zoneLetter}</strong></div>
+    <div><span>Local Time:</span><strong>${formatLocalStatusClock(localNow)}</strong></div>
+    <div><span>Zulu Time:</span><strong>${formatMilitaryClock(zuluNow)}Z</strong></div>
+  `;
+}
+
+function renderThemeSwatches(themeKey) {
+  const theme = appThemeDefinitions[themeKey] || appThemeDefinitions["watchkeeper-default"];
+  const colors = themeKey === "custom"
+    ? [
+        appSettings.customTheme.appBg,
+        appSettings.customTheme.panelBg,
+        appSettings.customTheme.accentColor,
+        appSettings.customTheme.warningColor,
+        appSettings.customTheme.dangerColor,
+        appSettings.customTheme.textColor
+      ]
+    : theme.colors;
+
+  return colors.map(color => `
+    <span class="theme-swatch" style="background:${color}" title="${color}"></span>
+  `).join("");
+}
+
+function applyAppTheme(themeKey = appSettings.theme) {
+  const resolvedTheme = appThemeDefinitions[themeKey]
+    ? themeKey
+    : "watchkeeper-default";
+  document.body.dataset.theme = resolvedTheme;
+
+  Object.values(customThemeVariableMap).forEach(variableName => {
+    document.body.style.removeProperty(variableName);
+  });
+
+  if (resolvedTheme === "custom") {
+    Object.entries(customThemeVariableMap).forEach(([settingName, variableName]) => {
+      document.body.style.setProperty(variableName, appSettings.customTheme[settingName]);
+    });
+  }
+}
+
+window.changeAppTheme = function(themeKey) {
+  if (!appThemeDefinitions[themeKey]) return;
+  appSettings.theme = themeKey;
+  saveAppSettings();
+  applyAppTheme(themeKey);
+
+  const preview = document.getElementById("themeSwatchPreview");
+  if (preview) preview.innerHTML = renderThemeSwatches(themeKey);
+
+  const customControls = document.getElementById("customThemeControls");
+  if (customControls) customControls.classList.toggle("hidden", themeKey !== "custom");
+};
+
+function getCustomThemeValuesFromForm() {
+  return Object.keys(customThemeVariableMap).reduce((theme, settingName) => {
+    theme[settingName] = safeValue(
+      `customTheme_${settingName}`,
+      appSettings.customTheme[settingName]
+    );
+    return theme;
+  }, {});
+}
+
+window.previewCustomTheme = function() {
+  if (appSettings.theme !== "custom") return;
+  const previewTheme = getCustomThemeValuesFromForm();
+
+  Object.entries(customThemeVariableMap).forEach(([settingName, variableName]) => {
+    document.body.style.setProperty(variableName, previewTheme[settingName]);
+  });
+
+  const preview = document.getElementById("themeSwatchPreview");
+  if (preview) {
+    const previewColors = [
+      previewTheme.appBg,
+      previewTheme.panelBg,
+      previewTheme.accentColor,
+      previewTheme.warningColor,
+      previewTheme.dangerColor,
+      previewTheme.textColor
+    ];
+    preview.innerHTML = previewColors.map(color => `
+      <span class="theme-swatch" style="background:${color}" title="${color}"></span>
+    `).join("");
+  }
+};
+
+window.saveCustomTheme = function() {
+  appSettings.customTheme = getCustomThemeValuesFromForm();
+  appSettings.theme = "custom";
+  saveAppSettings();
+  applyAppTheme("custom");
+
+  const result = document.getElementById("customThemeResult");
+  if (result) result.textContent = "Custom palette saved.";
+};
+
+function getMemberLeaveForDate(memberIndex, dateString) {
+  if (!dateString || memberIndex < 0) return null;
+  return leaveItems.find(item =>
+    item.memberIndex === memberIndex &&
+    dateString >= item.startDate &&
+    dateString <= item.endDate
+  ) || null;
+}
+
+function confirmCrewLeaveSelections(selectedRoles, missionDate) {
+  const conflicts = selectedRoles.map(item => {
+    const memberIndex = crew.indexOf(item.member);
+    const leaveItem = getMemberLeaveForDate(memberIndex, missionDate);
+    return leaveItem ? { ...item, leaveItem } : null;
+  }).filter(Boolean);
+
+  if (conflicts.length === 0) return true;
+
+  const details = conflicts.map(item =>
+    `${item.role}: ${getFullDisplayName(item.member)} is on ${item.leaveItem.leaveType}`
+  ).join("\n");
+
+  return confirm(`Double-check these selections for ${missionDate}:\n${details}\n\nSave anyway?`);
+}
+
+function renderSearchableCrewSelect(id, optionsHtml, dateInputId, selectAttributes = "") {
+  return `
+    <div class="crew-select-control">
+      <input
+        class="crew-select-search"
+        type="search"
+        placeholder="Search personnel"
+        oninput="filterCrewSelect(this, '${id}')"
+      >
+      <select
+        id="${id}"
+        ${selectAttributes}
+        data-date-input="${dateInputId || ""}"
+        onchange="updateCrewSelectionWarning(this)"
+      >
+        ${optionsHtml}
+      </select>
+      <div class="crew-selection-warning" id="${id}_warning"></div>
+    </div>
+  `;
+}
+
+window.filterCrewSelect = function(searchInput, selectId = "") {
+  const select = selectId
+    ? document.getElementById(selectId)
+    : searchInput.closest(".crew-select-control")?.querySelector("select");
+  if (!select) return;
+
+  const query = (searchInput.value || "").trim().toLowerCase();
+  [...select.options].forEach(option => {
+    option.hidden = Boolean(option.value) && !option.textContent.toLowerCase().includes(query);
+  });
+};
+
+window.updateCrewSelectionWarning = function(select) {
+  if (!select) return;
+  const warningBox = select.id
+    ? document.getElementById(`${select.id}_warning`)
+    : select.closest(".crew-select-control")?.querySelector(".crew-selection-warning");
+  if (!warningBox) return;
+
+  const dateInput = select.dataset.dateInput
+    ? document.getElementById(select.dataset.dateInput)
+    : null;
+  const missionDate = dateInput?.value || select.dataset.missionDate || dashboardDutyDate;
+  const memberIndex = Number(select.value);
+  const leaveItem = select.value === "" ? null : getMemberLeaveForDate(memberIndex, missionDate);
+
+  warningBox.innerHTML = leaveItem
+    ? `<div class="scenario-readiness warning">This person is on a ${leaveItem.leaveType} status for ${missionDate}. Double-check your selection.</div>`
+    : "";
+};
+
+window.refreshCrewSelectionWarnings = function() {
+  document.querySelectorAll("select[data-date-input]").forEach(select => {
+    updateCrewSelectionWarning(select);
+  });
+};
+
+function parseLocalDate(dateString) {
+  return dateString ? new Date(`${dateString}T12:00:00`) : null;
+}
+
+function getDaysFromToday(dateString) {
+  const date = parseLocalDate(dateString);
+  if (!date) return null;
+
+  const today = parseLocalDate(getLocalDateString());
+  return Math.floor((today - date) / (1000 * 60 * 60 * 24));
+}
+
+function isDepartedMember(member) {
+  if (!member?.lossDate || !member.lossReason) return false;
+  if (member.lossReason === "None" || member.lossReason === "TDY") return false;
+
+  const daysSinceDeparture = getDaysFromToday(member.lossDate);
+  return daysSinceDeparture !== null && daysSinceDeparture >= 0;
+}
+
+function formatMemberTitles(title) {
+  if (!title) return "";
+
+  return title
+    .split(/\s*(?:,|;|\||\/)\s*/)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function processDepartedMembers() {
+  const expiredIndexes = crew
+    .map((member, index) => ({ member, index }))
+    .filter(({ member }) => {
+      if (!isDepartedMember(member)) return false;
+      return getDaysFromToday(member.lossDate) >= 10;
+    })
+    .map(item => item.index);
+
+  if (expiredIndexes.length === 0) return;
+
+  const oldCdoMembers = getCdoQualifiedMembers();
+  const manualCdoNames = Object.fromEntries(
+    Object.entries(cdoSettings.manualAssignments || {}).map(([date, index]) => [
+      date,
+      oldCdoMembers[index] ? getFullDisplayName(oldCdoMembers[index]) : null
+    ])
+  );
+  const expiredSet = new Set(expiredIndexes);
+  const newIndexByOldIndex = new Map();
+  let nextIndex = 0;
+
+  crew.forEach((member, oldIndex) => {
+    if (!expiredSet.has(oldIndex)) {
+      newIndexByOldIndex.set(oldIndex, nextIndex);
+      nextIndex++;
+    }
+  });
+
+  crew = crew.filter((member, index) => !expiredSet.has(index));
+  cdoSettings.rotationOrder = (cdoSettings.rotationOrder || [])
+    .filter(oldIndex => newIndexByOldIndex.has(oldIndex))
+    .map(oldIndex => newIndexByOldIndex.get(oldIndex));
+
+  const newCdoMembers = getCdoQualifiedMembers();
+  cdoSettings.manualAssignments = Object.fromEntries(
+    Object.entries(manualCdoNames)
+      .map(([date, memberName]) => [
+        date,
+        newCdoMembers.findIndex(member => getFullDisplayName(member) === memberName)
+      ])
+      .filter(([, index]) => index >= 0)
+  );
+
+  leaveItems = leaveItems
+    .filter(item => !expiredSet.has(item.memberIndex))
+    .map(item => ({
+      ...item,
+      memberIndex: newIndexByOldIndex.get(item.memberIndex)
+    }));
+
+  saveCrew();
+  saveLeaveItems();
+  saveCdoSettings();
+}
+
+function getMemberDisplayStatus(member) {
+  return isDepartedMember(member) ? "Departed" : (member.status || "Available");
+}
+
 function getRankValue(rank) {
   const normalized = (rank || "").toUpperCase();
   const index = rankOrder.indexOf(normalized);
@@ -228,6 +799,32 @@ function sortMembers(members) {
 
 function getGroup(sectionName) {
   return sortMembers(crew.filter(member => member.section === sectionName));
+}
+
+function getPersonnelSectionNames() {
+  return [
+    ...getConfiguredSectionNames(),
+    "Day Worker",
+    "Galley",
+    "Reservist",
+    "TDY to Station"
+  ];
+}
+
+function renderPersonnelSectionOptions(selectedValue = "") {
+  return getPersonnelSectionNames().map(sectionName => `
+    <option value="${sectionName}" ${sectionName === selectedValue ? "selected" : ""}>${sectionName}</option>
+  `).join("");
+}
+
+function syncMemberSectionOptions() {
+  const select = document.getElementById("memberSection");
+  if (!select) return;
+  const selectedValue = select.value;
+  select.innerHTML = renderPersonnelSectionOptions(selectedValue);
+  if (!getPersonnelSectionNames().includes(selectedValue)) {
+    select.value = getConfiguredSectionNames()[0] || "Day Worker";
+  }
 }
 
 function getAvailableGroup(sectionName) {
@@ -617,7 +1214,8 @@ function clearModal() {
   setValue("memberTitle", "None");
   setValue("customTitle", "");
   setValue("memberDept", "Deck");
-  setValue("memberSection", "PORT");
+  syncMemberSectionOptions();
+  setValue("memberSection", getConfiguredSectionNames()[0] || "Day Worker");
   setValue("memberStatus", "Available");
   setValue("customCollateral", "");
   setValue("lossDate", "");
@@ -629,12 +1227,24 @@ function clearModal() {
   });
 }
 
+function prepareMemberModalForInteraction() {
+  if (!modal) return;
+
+  modal.querySelectorAll("input, select, textarea, button").forEach(control => {
+    control.disabled = false;
+    if ("readOnly" in control) control.readOnly = false;
+  });
+
+  modal.removeAttribute("aria-hidden");
+  modal.classList.remove("hidden");
+}
+
 function openMemberModal() {
   clearModal();
 
   if (!modal) return;
 
-  modal.classList.remove("hidden");
+  prepareMemberModalForInteraction();
 
   const modalCard = modal.querySelector(".modal-card");
   if (modalCard) modalCard.scrollTop = 0;
@@ -646,7 +1256,12 @@ function openMemberModal() {
 }
 
 function closeMemberModal() {
-  if (modal) modal.classList.add("hidden");
+  if (modal) {
+    const activeElement = document.activeElement;
+    if (activeElement && modal.contains(activeElement)) activeElement.blur();
+    modal.classList.add("hidden");
+    modal.setAttribute("aria-hidden", "true");
+  }
   clearMemberError();
 }
 
@@ -771,7 +1386,7 @@ function getCurrentDutySection() {
 }
 
 function changeDashboardDutyDate(days) {
-  const currentDate = new Date(dashboardDutyDate);
+  const currentDate = parseLocalDate(dashboardDutyDate);
   currentDate.setDate(currentDate.getDate() + days);
   dashboardDutyDate = getLocalDateString(currentDate);
   renderDashboard();
@@ -784,6 +1399,28 @@ function resetDashboardDutyDate() {
 
 function getDisplayedPlannedCrews() {
   return plannedCrews.filter(plan => plan.dutyDate === dashboardDutyDate);
+}
+
+const dailyDutyPatrolTypes = ["ELT-DRUG", "ELT-MIGRANT", "RBS", "Training"];
+
+function isDailyDutyPatrolPlan(plan) {
+  return Boolean(
+    plan &&
+    (
+      dailyDutyPatrolTypes.includes(plan.patrolType) ||
+      dailyDutyPatrolTypes.includes(plan.missionType) ||
+      plan.startTime ||
+      plan.endTime
+    )
+  );
+}
+
+function getDisplayedDailyDutyPatrols() {
+  return getDisplayedPlannedCrews().filter(isDailyDutyPatrolPlan);
+}
+
+function getDisplayedMissionPackagePlans() {
+  return getDisplayedPlannedCrews().filter(plan => !isDailyDutyPatrolPlan(plan));
 }
 
 function getPrimarySarCrewForDashboard() {
@@ -799,13 +1436,49 @@ function getPlannedCrewsForDate(dateString) {
   return plannedCrews.filter(plan => plan.dutyDate === dateString);
 }
 
-function getDutySectionForDate(dateString) {
-  if (dutyOverrides[dateString]) {
-    return dutyOverrides[dateString];
-  }
+function getDutyPatternDefinition() {
+  return dutyPatternDefinitions[rotationSettings.pattern] || dutyPatternDefinitions["2-on-2-off"];
+}
 
-  const startDate = new Date(rotationSettings.dutyStartDate);
-  const targetDate = new Date(dateString);
+function getConfiguredSections() {
+  return rotationSettings.sections.slice(0, getDutyPatternDefinition().sectionCount);
+}
+
+function getConfiguredSectionNames() {
+  return getConfiguredSections().map(section => section.name);
+}
+
+function getSectionConfig(sectionName) {
+  return rotationSettings.sections.find(section => section.name === sectionName) || {
+    name: sectionName,
+    color: "#64748b"
+  };
+}
+
+function hexToRgba(hex, alpha) {
+  const clean = String(hex || "").replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(clean)) return `rgba(100, 116, 139, ${alpha})`;
+  const value = Number.parseInt(clean, 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+}
+
+function getSectionInlineStyle(sectionName, backgroundAlpha = 0.12) {
+  const color = getSectionConfig(sectionName).color;
+  return `--section-color:${color};border-color:${color};background:${hexToRgba(color, backgroundAlpha)};`;
+}
+
+function getOrderedDutySections() {
+  const sections = getConfiguredSections();
+  const currentIndex = Math.max(0, sections.findIndex(section => section.name === rotationSettings.currentSection));
+  return [...sections.slice(currentIndex), ...sections.slice(0, currentIndex)];
+}
+
+function getDutyAssignmentForDate(dateString) {
+  const sections = getOrderedDutySections();
+  if (sections.length === 0) return { dutySection: "Unassigned", dayWorkSection: null };
+
+  const startDate = parseLocalDate(rotationSettings.dutyStartDate);
+  const targetDate = parseLocalDate(dateString);
 
   startDate.setHours(0,0,0,0);
   targetDate.setHours(0,0,0,0);
@@ -813,16 +1486,37 @@ function getDutySectionForDate(dateString) {
   const daysPassed = Math.floor(
     (targetDate - startDate) / (1000 * 60 * 60 * 24)
   );
+  const cycleIndex = (value, length) => ((value % length) + length) % length;
+  let dutySection;
+  let dayWorkSection = null;
 
-  const cycleDay = ((daysPassed % 4) + 4) % 4;
-
-  if (cycleDay === 0 || cycleDay === 1) {
-    return rotationSettings.currentSection;
+  if (rotationSettings.pattern === "2-on-2-off") {
+    const firstSectionDutyDays = new Set([0, 1, 2, 5, 6, 10, 11]);
+    dutySection = sections[firstSectionDutyDays.has(cycleIndex(daysPassed, 14)) ? 0 : 1].name;
+  } else if (rotationSettings.pattern === "four-section-relief") {
+    const weekIndex = cycleIndex(Math.floor(daysPassed / 7) - 1, sections.length);
+    dayWorkSection = sections[weekIndex].name;
+    const activeSections = [
+      ...sections.slice(weekIndex + 1),
+      ...sections.slice(0, weekIndex)
+    ];
+    dutySection = activeSections[cycleIndex(daysPassed, 7) % activeSections.length].name;
+  } else {
+    dutySection = sections[cycleIndex(daysPassed, sections.length)].name;
   }
 
-  return rotationSettings.currentSection === "PORT"
-    ? "STBD"
-    : "PORT";
+  return {
+    dutySection: dutyOverrides[dateString] || dutySection,
+    dayWorkSection
+  };
+}
+
+function getDutySectionForDate(dateString) {
+  return getDutyAssignmentForDate(dateString).dutySection;
+}
+
+function getDayWorkSectionForDate(dateString) {
+  return getDutyAssignmentForDate(dateString).dayWorkSection;
 }
 
 function getLocalDateString(date = new Date()) {
@@ -834,7 +1528,7 @@ function getLocalDateString(date = new Date()) {
 }
 
 function getPrettyDateTime(dateString) {
-  const date = new Date(`${dateString}T12:00:00`);
+  const date = parseLocalDate(dateString);
 
   const prettyDate = date.toLocaleDateString("en-US", {
     weekday: "long",
@@ -844,8 +1538,9 @@ function getPrettyDateTime(dateString) {
   });
 
   const prettyTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit"
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: appSettings.timeFormat === "12"
   });
 
   return `${prettyDate} | ${prettyTime}`;
@@ -879,7 +1574,7 @@ function getDashboardDisplay(member) {
   const lastName = member.lastName || "";
   const pieces = [`${rank} ${lastName}`.trim()];
 
-  if (member.title) pieces.push(member.title);
+  if (member.title) pieces.push(formatMemberTitles(member.title));
 
   const trackedQualProblem = getMemberTrackedQuals(member)
     .map(item => getSingleTrackedQualStatus(item))
@@ -897,6 +1592,186 @@ function getDashboardDisplay(member) {
 
 function getMemberIndex(member) {
   return crew.indexOf(member);
+}
+
+function getCrewMemberFromPlanItem(item) {
+  if (!item) return null;
+  if (item.member && crew.includes(item.member)) return item.member;
+
+  return crew.find(member =>
+    getFullDisplayName(member) === getFullDisplayName(item.member)
+  ) || null;
+}
+
+function plannedRoleMatches(role, patterns) {
+  const normalized = (role || "").toLowerCase();
+  return patterns.some(pattern => normalized.includes(pattern));
+}
+
+function memberMeetsPlannedRole(member, role) {
+  if (!member) return false;
+
+  if (plannedRoleMatches(role, ["pursuit coxswain"])) {
+    return memberHasQual(member, "PCX");
+  }
+
+  if (plannedRoleMatches(role, ["coxswain", "pcxc", "cxc"])) {
+    return memberHasQual(member, "PCX") || memberHasQual(member, "CX");
+  }
+
+  if (plannedRoleMatches(role, ["engineer"])) {
+    return memberHasQual(member, "ENG");
+  }
+
+  if (plannedRoleMatches(role, ["pursuit gunner"])) {
+    return memberHasQual(member, "PG");
+  }
+
+  if (plannedRoleMatches(role, ["boarding officer"])) {
+    return memberHasQual(member, "BO");
+  }
+
+  if (plannedRoleMatches(role, ["boarding team member"])) {
+    return memberHasQual(member, "BTM");
+  }
+
+  if (plannedRoleMatches(role, ["crewman", "additional crew", "crew / support", "boarding / crew support"])) {
+    return memberHasQual(member, "CR") || memberHasQual(member, "BTM") || memberHasQual(member, "BO");
+  }
+
+  if (plannedRoleMatches(role, ["ood"])) {
+    return memberHasQual(member, "OOD");
+  }
+
+  return true;
+}
+
+function getPlannedCrewValidation(plan) {
+  const warnings = [];
+  const crewItems = plan.crew || [];
+  const assignedMembers = crewItems
+    .map(item => getCrewMemberFromPlanItem(item))
+    .filter(Boolean);
+  const assetCrewSize = Number(plan.asset?.crewSize || 0);
+
+  if (assetCrewSize && assignedMembers.length < assetCrewSize) {
+    warnings.push(`Crew size below asset default: ${assignedMembers.length}/${assetCrewSize} assigned.`);
+  }
+
+  crewItems.forEach(item => {
+    const member = getCrewMemberFromPlanItem(item);
+
+    if (!member) {
+      warnings.push(`${item.role || "Role"} has no assigned member.`);
+      return;
+    }
+
+    if (!memberMeetsPlannedRole(member, item.role)) {
+      warnings.push(`${item.role}: ${getFullDisplayName(member)} may be missing the required qualification.`);
+    }
+
+    const memberIndex = crew.indexOf(member);
+    if (memberIndex !== -1 && isMemberOnLeaveForDate(memberIndex, plan.dutyDate)) {
+      warnings.push(`${item.role}: ${getFullDisplayName(member)} is on leave for this date.`);
+    }
+  });
+
+  const hasCoxswain = crewItems.some(item =>
+    plannedRoleMatches(item.role, ["coxswain", "pcxc", "cxc"])
+  );
+  const hasEngineer = crewItems.some(item =>
+    plannedRoleMatches(item.role, ["engineer"])
+  );
+
+  if (!hasCoxswain) warnings.push("Missing coxswain role.");
+  if (!hasEngineer) warnings.push("Missing engineer role.");
+
+  if (plan.asset?.status === "NMC") {
+    warnings.push("Selected asset is NMC.");
+  }
+
+  if (plan.asset?.status === "PMC" && plan.asset?.pmcDescription) {
+    warnings.push(`Asset is PMC: ${plan.asset.pmcDescription}`);
+  }
+
+  return warnings;
+}
+
+function getPlannedCrewTitle(plan) {
+  if (isDailyDutyPatrolPlan(plan)) {
+    return plan.patrolType || plan.missionType || "Daily Duty Patrol";
+  }
+
+  return plan.missionType || "Mission Package";
+}
+
+function renderPlannedCrewCard(plan) {
+  const validationWarnings = getPlannedCrewValidation(plan);
+
+  return `
+    <div class="scenario-summary planned-crew-card">
+      <div class="member-header">
+        <div>
+          <h4>${getPlannedCrewTitle(plan)}</h4>
+          <p>
+            ${plan.asset?.name || "No asset"}
+            ${plan.asset?.type ? ` | ${plan.asset.type}` : ""}
+            ${plan.asset?.status ? ` | ${plan.asset.status}` : ""}
+          </p>
+          ${
+            plan.startTime || plan.endTime
+              ? `<p><strong>Time:</strong> ${formatTimeValue(plan.startTime)} - ${formatTimeValue(plan.endTime)}</p>`
+              : ""
+          }
+        </div>
+
+        <div class="member-actions">
+          <button class="action-btn delete-btn" onclick="deletePlannedCrew(${plan.id})">
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <ul>
+        ${(plan.crew || []).map(item => {
+          const member = getCrewMemberFromPlanItem(item);
+          const memberIndex = crew.indexOf(member);
+          const onLeave = memberIndex !== -1 && isMemberOnLeaveForDate(memberIndex, dashboardDutyDate);
+
+          return `
+            <li>
+              <strong>${item.role}:</strong>
+              ${member ? getFullDisplayName(member) : "Unassigned"}
+              ${
+                onLeave
+                  ? `<span class="qual-status qual-overdue">ON LEAVE</span>`
+                  : ""
+              }
+            </li>
+          `;
+        }).join("") || `<li>No crew assigned.</li>`}
+      </ul>
+
+      ${
+        validationWarnings.length === 0
+          ? `
+            <div class="scenario-readiness ready-panel">
+              Crew validation passed.
+            </div>
+          `
+          : `
+            <div class="scenario-readiness warning-panel">
+              <strong>Validation Warnings</strong>
+              <ul>
+                ${validationWarnings.map(warning => `<li>${warning}</li>`).join("")}
+              </ul>
+            </div>
+          `
+      }
+
+      ${plan.notes ? `<p class="member-notes">${plan.notes}</p>` : ""}
+    </div>
+  `;
 }
 
 function getUpcomingLosses() {
@@ -921,14 +1796,14 @@ function getUpcomingLosses() {
 
 function renderDashboard() {
   const currentDutySection = getDutySectionForDate(dashboardDutyDate);
+  const currentDayWorkSection = getDayWorkSectionForDate(dashboardDutyDate);
   const currentCdo = getCdoForDate(dashboardDutyDate);
-  const portCrew = getGroup("PORT");
-  const stbdCrew = getGroup("STBD");
+  const dutySections = getConfiguredSections();
   const upcomingLosses = getUpcomingLosses();
-  const displayedPlannedCrews = getDisplayedPlannedCrews();
+  const displayedDailyDutyPatrols = getDisplayedDailyDutyPatrols();
+  const displayedMissionPackagePlans = getDisplayedMissionPackagePlans();
   const workSummary = getWorkSummary();
   const topWorkItems = getTopOpenWorkItems();
-  const dashboardSarCrew = getPrimarySarCrewForDashboard();
   const leaveSummary = getLeaveSummaryForDashboardDate();
   const leaveConflicts = getPlannedCrewLeaveConflictsForDate(dashboardDutyDate);
 
@@ -951,8 +1826,9 @@ function renderDashboard() {
 
             <p>
               <strong>Duty Section:</strong> ${currentDutySection}
+              ${currentDayWorkSection ? ` | <strong>Day Work / Relief:</strong> ${currentDayWorkSection}` : ""}
               |
-              <strong>Rotation:</strong> ${rotationSettings.pattern}
+              <strong>Rotation:</strong> ${getDutyPatternDefinition().label}
             </p>
           </div>
 
@@ -999,27 +1875,32 @@ function renderDashboard() {
         </div>
       </div>
 
-      <div class="card port-card">
-        <p>PORT Personnel</p>
-        <h3>${portCrew.length}</h3>
-      </div>
-
-      <div class="card stbd-card">
-        <p>STBD Personnel</p>
-        <h3>${stbdCrew.length}</h3>
-      </div>
+      ${dutySections.map(section => `
+        <div class="card section-color-card" style="${getSectionInlineStyle(section.name)}">
+          <p>${section.name} Personnel</p>
+          <h3>${getGroup(section.name).length}</h3>
+        </div>
+      `).join("")}
 
       <div class="duty-sections-row">
 
-        ${["PORT", "STBD"].map(sectionName => {
+        ${dutySections.map(section => {
+          const sectionName = section.name;
           const members = getGroup(sectionName);
           const isOnDuty = sectionName === currentDutySection;
+          const isDayWork = sectionName === currentDayWorkSection;
+          const readiness = checkReadiness(sectionName);
 
           return `
-            <div class="panel ${sectionName === "PORT" ? "port-panel" : "stbd-panel"} ${isOnDuty ? "on-duty-panel" : ""}">
+            <div class="panel section-color-panel ${isOnDuty ? "on-duty-panel" : ""}" style="${getSectionInlineStyle(sectionName)}">
               ${isOnDuty ? `<div class="on-duty-label">ON DUTY</div>` : ""}
+              ${isDayWork ? `<div class="day-work-label">DAY WORK / RELIEF</div>` : ""}
 
               <h3>${sectionName} Section Members</h3>
+
+              <p class="section-readiness-status ${readiness.ready ? "ready-text" : "not-ready-text"}">
+                ${readiness.ready ? "MISSION CAPABLE" : `MISSING: ${readiness.missing.join(", ")}`}
+              </p>
 
               <ul>
                 ${
@@ -1065,95 +1946,22 @@ function renderDashboard() {
       </div>
 
       <div class="panel wide">
-        <h3>Today's SAR Crew</h3>
+        <h3>Daily Duty Patrols for ${dashboardDutyDate}</h3>
 
         ${
-          !dashboardSarCrew
-            ? `<p class="empty-text">No SAR crew planned for this duty date.</p>`
-            : `
-              <div class="scenario-summary">
-                <h4>${dashboardSarCrew.asset.name}</h4>
-                <p>${dashboardSarCrew.asset.type} | ${dashboardSarCrew.asset.status}</p>
-
-                <ul>
-                  ${dashboardSarCrew.crew.map(item => {
-                    const memberIndex = crew.indexOf(item.member);
-                    const onLeave = isMemberOnLeaveForDate(memberIndex, dashboardDutyDate);
-
-                    return `
-                      <li>
-                        <strong>${item.role}:</strong>
-                        ${getFullDisplayName(item.member)}
-                        ${
-                          onLeave
-                            ? `<span class="qual-status qual-overdue">ON LEAVE</span>`
-                            : ""
-                        }
-                      </li>
-                    `;
-                  }).join("")}
-                </ul>
-
-                ${dashboardSarCrew.notes ? `<p class="member-notes">${dashboardSarCrew.notes}</p>` : ""}
-              </div>
-            `
+          displayedDailyDutyPatrols.length === 0
+            ? `<p class="empty-text">No ELT, RBS, or Training patrols saved for this duty date.</p>`
+            : displayedDailyDutyPatrols.map(plan => renderPlannedCrewCard(plan)).join("")
         }
       </div>
 
       <div class="panel wide">
-        <h3>Planned Crews for ${dashboardDutyDate}</h3>
+        <h3>Mission Packages for ${dashboardDutyDate}</h3>
 
         ${
-          displayedPlannedCrews.length === 0
-            ? `<p class="empty-text">No planned crews saved for this duty date.</p>`
-            : ["Standby SAR Crew", "Patrol Crew", "Training Crew", "Mission Crew"].map(type => {
-                const crewsOfType = displayedPlannedCrews.filter(plan =>
-                  plan.missionType === type
-                );
-
-                return `
-                  <div class="member-card">
-                    <h4>${type}</h4>
-
-                    ${
-                      crewsOfType.length === 0
-                        ? `<p class="empty-text">No ${type.toLowerCase()} planned.</p>`
-                        : crewsOfType.map(plan => `
-                            <div class="scenario-summary">
-                              <h4>${plan.asset.name}</h4>
-
-                              <p>${plan.asset.type} | ${plan.asset.status}</p>
-
-                              <ul>
-                                ${plan.crew.map(item => {
-                                  const memberIndex = crew.indexOf(item.member);
-                                  const onLeave = isMemberOnLeaveForDate(memberIndex, dashboardDutyDate);
-
-                                  return `
-                                    <li>
-                                      <strong>${item.role}:</strong>
-                                      ${getFullDisplayName(item.member)}
-                                      ${
-                                        onLeave
-                                          ? `<span class="qual-status qual-overdue">ON LEAVE</span>`
-                                          : ""
-                                      }
-                                    </li>
-                                  `;
-                                }).join("")}
-                              </ul>
-
-                              ${plan.notes ? `<p class="member-notes">${plan.notes}</p>` : ""}
-
-                              <button class="action-btn delete-btn" onclick="deletePlannedCrew(${plan.id})">
-                                Delete Planned Crew
-                              </button>
-                            </div>
-                          `).join("")
-                    }
-                  </div>
-                `;
-              }).join("")
+          displayedMissionPackagePlans.length === 0
+            ? `<p class="empty-text">No mission packages saved for this duty date.</p>`
+            : displayedMissionPackagePlans.map(plan => renderPlannedCrewCard(plan)).join("")
         }
       </div>
 
@@ -1286,13 +2094,15 @@ function renderCalendar() {
       String(date.getDate()).padStart(2, "0");
 
     const section = getDutySectionForDate(dateString);
+    const dayWorkSection = getDayWorkSectionForDate(dateString);
     const hasOverride = !!dutyOverrides[dateString];
     const plannedForDay = getPlannedCrewsForDate(dateString);
     const dayCdo = getCdoForDate(dateString);
 
     cells += `
       <div
-        class="calendar-cell ${section === "PORT" ? "port-day" : "stbd-day"} ${hasOverride ? "override-day" : ""}"
+        class="calendar-cell section-calendar-day ${hasOverride ? "override-day" : ""} ${selectedCalendarDate === dateString ? "selected-calendar-day" : ""}"
+        style="${getSectionInlineStyle(section, 0.22)}"
         onclick="selectCalendarDate('${dateString}')"
       >
         <strong>${day}</strong>
@@ -1300,6 +2110,8 @@ function renderCalendar() {
         <div class="calendar-duty">
           ${section}
         </div>
+
+        ${dayWorkSection ? `<div class="calendar-relief">Relief: ${dayWorkSection}</div>` : ""}
 
         <div class="calendar-cdo">
           CDO: ${dayCdo ? dayCdo.lastName || getFullDisplayName(dayCdo) : "None"}
@@ -1315,12 +2127,12 @@ function renderCalendar() {
 
           ${
             plannedForDay.length === 0
-              ? `<span>No Crews</span>`
+              ? ""
               : plannedForDay
                   .slice(0, 2)
                   .map(plan => `
                     <div class="calendar-crew-tag">
-                      ${plan.missionType.replace(" Crew","")}
+                      ${getPlannedCrewTitle(plan).replace(" Crew","")}
                     </div>
                   `)
                   .join("")
@@ -1378,13 +2190,72 @@ function renderCalendar() {
 
       </div>
 
+      ${renderSelectedCalendarDateDetails()}
+
+    </div>
+  `;
+}
+
+function renderSelectedCalendarDateDetails() {
+  if (!selectedCalendarDate) return "";
+
+  const section = getDutySectionForDate(selectedCalendarDate);
+  const dayWorkSection = getDayWorkSectionForDate(selectedCalendarDate);
+  const cdo = getCdoForDate(selectedCalendarDate);
+  const plans = getPlannedCrewsForDate(selectedCalendarDate);
+  const leaveForDay = getLeaveItemsForDate(selectedCalendarDate);
+
+  return `
+    <div class="calendar-day-details">
+      <div class="member-header">
+        <div>
+          <h3>${new Date(`${selectedCalendarDate}T12:00:00`).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+            year: "numeric"
+          })}</h3>
+          <p><strong>Duty Section:</strong> ${section}</p>
+          ${dayWorkSection ? `<p><strong>Day Work / Relief Section:</strong> ${dayWorkSection}</p>` : ""}
+          <p><strong>CDO:</strong> ${cdo ? getFullDisplayName(cdo) : "No CDO assigned"}</p>
+        </div>
+
+        <button class="primary-btn" onclick="openCalendarDateDashboard('${selectedCalendarDate}')">
+          Open Dashboard
+        </button>
+      </div>
+
+      <div class="calendar-detail-grid">
+        <div>
+          <h4>Planned Patrols and Missions</h4>
+          ${
+            plans.length === 0
+              ? ""
+              : `<ul>${plans.map(plan => `<li>${getPlannedCrewTitle(plan)} - ${plan.asset?.name || "No asset"}</li>`).join("")}</ul>`
+          }
+        </div>
+
+        <div>
+          <h4>Personnel Unavailable</h4>
+          ${
+            leaveForDay.length === 0
+              ? `<p class="empty-text">No leave entries.</p>`
+              : `<ul>${leaveForDay.map(item => {
+                  const member = crew[item.memberIndex];
+                  return `<li>${member ? getFullDisplayName(member) : "Unknown Member"} - ${item.leaveType}</li>`;
+                }).join("")}</ul>`
+          }
+        </div>
+      </div>
     </div>
   `;
 }
 
 window.toggleDutyOverrideForDisplayedDate = function() {
   const currentSection = getDutySectionForDate(dashboardDutyDate);
-  const newSection = currentSection === "PORT" ? "STBD" : "PORT";
+  const sections = getConfiguredSectionNames();
+  const currentIndex = sections.indexOf(currentSection);
+  const newSection = sections[(currentIndex + 1) % sections.length];
 
   dutyOverrides[dashboardDutyDate] = newSection;
   saveDutyOverrides();
@@ -1404,6 +2275,7 @@ window.clearDutyOverrideForDisplayedDate = function() {
 window.changeCalendarMonth = function(direction) {
 
   calendarMonth += direction;
+  selectedCalendarDate = null;
 
   if (calendarMonth < 0) {
     calendarMonth = 11;
@@ -1419,16 +2291,19 @@ window.changeCalendarMonth = function(direction) {
 };
 
 window.selectCalendarDate = function(dateString) {
+  selectedCalendarDate = selectedCalendarDate === dateString ? null : dateString;
+  renderCalendar();
+};
 
+window.openCalendarDateDashboard = function(dateString) {
   dashboardDutyDate = dateString;
-
-  document
-    .querySelector('[data-page="dashboard"]')
-    ?.click();
+  document.querySelector('[data-page="dashboard"]')?.click();
 };
 
 window.toggleDashboardDutySection = function() {
-  dashboardSectionView = dashboardSectionView === "PORT" ? "STBD" : "PORT";
+  const sections = getConfiguredSectionNames();
+  const currentIndex = sections.indexOf(dashboardSectionView);
+  dashboardSectionView = sections[(currentIndex + 1) % sections.length];
   renderDashboard();
 };
 
@@ -1495,11 +2370,7 @@ function renderBatchAddRow() {
       <input class="batch-last" placeholder="Last">
 
       <select class="batch-section">
-        <option>PORT</option>
-        <option>STBD</option>
-        <option>Day Worker</option>
-        <option>Reservist</option>
-        <option>TDY to Station</option>
+        ${renderPersonnelSectionOptions()}
       </select>
 
       <select class="batch-dept">
@@ -1519,10 +2390,25 @@ function renderBatchAddRow() {
 }
 
 function renderRosterGroup(group) {
-  const members = getGroup(group.value);
+  const members = getGroup(group.value).filter(member => {
+    if (!rosterSearch) return true;
+
+    const searchable = [
+      getFullDisplayName(member),
+      member.title,
+      member.dept,
+      member.section,
+      member.status,
+      member.emplid,
+      ...(member.quals || []),
+      ...(member.collaterals || [])
+    ].join(" ").toLowerCase();
+
+    return searchable.includes(rosterSearch.toLowerCase());
+  });
 
   return `
-    <div class="panel roster-panel ${group.className}">
+    <div class="panel roster-panel ${group.className || ""}" style="${group.style || ""}">
       <h3>${group.title}</h3>
 
       ${
@@ -1536,8 +2422,8 @@ function renderRosterGroup(group) {
                   <div class="member-header">
                     <div>
                       <h4>${getFullDisplayName(member)}</h4>
-                      ${member.title ? `<p class="member-title">${member.title}</p>` : ""}
-                      <p>${member.dept} | ${member.status}</p>
+                      ${member.title ? `<p class="member-title">${formatMemberTitles(member.title)}</p>` : ""}
+                      <p>${member.dept} | ${getMemberDisplayStatus(member)}</p>
                     </div>
 
                     <div class="member-actions">
@@ -1579,16 +2465,20 @@ function renderRosterGroup(group) {
 }
 
 function renderCrewRoster() {
+  processDepartedMembers();
   pageTitle.textContent = "Crew Roster";
   pageSubtitle.textContent = "Personnel grouped by section and sorted by rank";
 
-  const topGroups = [
-    { title: "PORT Section", value: "PORT", className: "port-panel" },
-    { title: "STBD Section", value: "STBD", className: "stbd-panel" }
-  ];
+  const topGroups = getConfiguredSections().map(section => ({
+    title: `${section.name} Section`,
+    value: section.name,
+    className: "section-color-panel",
+    style: getSectionInlineStyle(section.name)
+  }));
 
   const lowerGroups = [
     { title: "Day Workers", value: "Day Worker", className: "" },
+    { title: "Galley", value: "Galley", className: "" },
     { title: "Reservists", value: "Reservist", className: "" },
     { title: "TDY to Station", value: "TDY to Station", className: "" }
   ];
@@ -1601,20 +2491,28 @@ function renderCrewRoster() {
         <h3>${crew.length}</h3>
       </div>
 
-      <div class="card port-card">
-        <p>PORT</p>
-        <h3>${getGroup("PORT").length}</h3>
-      </div>
-
-      <div class="card stbd-card">
-        <p>STBD</p>
-        <h3>${getGroup("STBD").length}</h3>
-      </div>
+      ${getConfiguredSections().map(section => `
+        <div class="card section-color-card" style="${getSectionInlineStyle(section.name)}">
+          <p>${section.name}</p>
+          <h3>${getGroup(section.name).length}</h3>
+        </div>
+      `).join("")}
 
       <div class="card">
         <p>CDO Qualified</p>
         <h3>${getCdoQualifiedMembers().length}</h3>
       </div>
+    </section>
+
+    <section class="panel roster-search-panel">
+      <label for="rosterSearch">Search Personnel</label>
+      <input
+        id="rosterSearch"
+        type="search"
+        value="${rosterSearch}"
+        placeholder="Search name, rank, qualification, title, department, section, or EMPLID"
+        oninput="setRosterSearch(this.value)"
+      >
     </section>
     
     <section class="roster-grid roster-row">
@@ -1631,6 +2529,17 @@ function renderCrewRoster() {
     </section>
   `;
 }
+
+window.setRosterSearch = function(value) {
+  rosterSearch = value || "";
+  renderCrewRoster();
+
+  const input = document.getElementById("rosterSearch");
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+};
 
 window.addPersonnelNote = function(index) {
 
@@ -1737,7 +2646,7 @@ window.viewPersonnelDetails = function(index) {
         <p><strong>Department:</strong> ${member.dept || "Not listed"}</p>
         <p><strong>Section:</strong> ${member.section || "Not listed"}</p>
         <p><strong>Status:</strong> ${member.status || "Not listed"}</p>
-        <p><strong>Title:</strong> ${member.title || "None"}</p>
+        <p><strong>Title:</strong> ${formatMemberTitles(member.title) || "None"}</p>
         <p><strong>EMPLID:</strong> ${member.emplid || "Not listed"}</p>
         <p><strong>Expected Arrival / Start Date:</strong> ${member.arrivalDate || "Not listed"}</p>
         <p><strong>Expected Section Swap Date:</strong> ${member.swapDate || "Not listed"}</p>
@@ -1955,7 +2864,8 @@ window.editMember = function(index) {
   setValue("memberTitle", member.title || "None");
   setValue("customTitle", "");
   setValue("memberDept", member.dept || "Deck");
-  setValue("memberSection", member.section || "PORT");
+  syncMemberSectionOptions();
+  setValue("memberSection", member.section || getConfiguredSectionNames()[0] || "Day Worker");
   setValue("memberStatus", member.status || "Available");
   setValue("lossDate", member.lossDate || "");
   setValue("lossReason", member.lossReason || "None");
@@ -1984,7 +2894,7 @@ window.editMember = function(index) {
     }
   });
 
-  modal.classList.remove("hidden");
+  prepareMemberModalForInteraction();
 
   const modalCard = modal.querySelector(".modal-card");
   if (modalCard) modalCard.scrollTop = 0;
@@ -2277,39 +3187,27 @@ window.setWorkListFilter = function(filter) {
 
 // ---------- Duty Sections ----------
 function renderDutySections() {
-  const portCrew = getGroup("PORT");
-  const stbdCrew = getGroup("STBD");
+  const dutySections = getConfiguredSections();
   const dayWorkers = getGroup("Day Worker");
-  const cdoQualified = getCdoQualifiedMembers();
 
   pageTitle.textContent = "Duty Sections";
-  pageSubtitle.textContent = "PORT, STBD, and Day Worker staffing overview";
+  pageSubtitle.textContent = "Duty section and relief staffing overview";
 
   content.innerHTML = `
     <section class="dashboard-grid">
-      ${renderSectionAnalysisPanel("PORT Section", portCrew, "port-panel")}
-      ${renderSectionAnalysisPanel("STBD Section", stbdCrew, "stbd-panel")}
-
-      <div class="panel wide">
-        <h3>CDO Qualified Personnel</h3>
-
-        ${
-          cdoQualified.length === 0
-            ? `<p class="empty-text">No CDO-qualified personnel listed.</p>`
-            : `
-              <ul>
-                ${cdoQualified.map(member => `
-                  <li>${getFullDisplayName(member)} - ${member.section}</li>
-                `).join("")}
-              </ul>
-            `
-        }
-      </div>
+      ${dutySections.map(section =>
+        renderSectionAnalysisPanel(
+          `${section.name} Section`,
+          getGroup(section.name),
+          "section-color-panel",
+          getSectionInlineStyle(section.name)
+        )
+      ).join("")}
 
       <div class="panel wide">
         <h3>Watch Keeper Notes</h3>
         <ul>
-          ${generateSectionRecommendations(portCrew, stbdCrew).map(note => `<li>${note}</li>`).join("")}
+          ${generateSectionRecommendations(dutySections).map(note => `<li>${note}</li>`).join("")}
         </ul>
       </div>
 
@@ -2320,9 +3218,9 @@ function renderDutySections() {
   `;
 }
 
-function renderSectionAnalysisPanel(title, members, extraClass) {
+function renderSectionAnalysisPanel(title, members, extraClass, style = "") {
   return `
-    <div class="section-analysis ${extraClass}">
+    <div class="section-analysis ${extraClass}" style="${style}">
       <h3>${title}</h3>
 
       <div class="section-topline">
@@ -2359,30 +3257,35 @@ function renderSectionAnalysisPanel(title, members, extraClass) {
   `;
 }
 
-function generateSectionRecommendations(portCrew, stbdCrew) {
+function generateSectionRecommendations(sectionConfigs) {
   const notes = [];
+  const sections = sectionConfigs.map(section => ({
+    name: section.name,
+    members: getGroup(section.name)
+  }));
+  const counts = sections.map(section => section.members.length);
+  const smallestCount = Math.min(...counts);
+  const largestCount = Math.max(...counts);
 
-  if (Math.abs(portCrew.length - stbdCrew.length) > 1) {
-    const smaller = portCrew.length < stbdCrew.length ? "PORT" : "STBD";
-    notes.push(`${smaller} has fewer assigned personnel. Consider assigning the next reporting member to ${smaller}.`);
+  if (largestCount - smallestCount > 1) {
+    const smaller = sections.find(section => section.members.length === smallestCount);
+    notes.push(`${smaller.name} has fewer assigned personnel. Consider assigning the next reporting member there.`);
   } else {
-    notes.push("PORT and STBD are balanced by total personnel count.");
+    notes.push("Duty sections are balanced by total personnel count.");
   }
 
   trackedQuals.forEach(qual => {
-    const portCount = countQual(portCrew, qual);
-    const stbdCount = countQual(stbdCrew, qual);
-
-    if (Math.abs(portCount - stbdCount) >= 2) {
-      const weaker = portCount < stbdCount ? "PORT" : "STBD";
-      notes.push(`${qual} is uneven. ${weaker} has fewer ${qual}-qualified members.`);
-    }
-
-    if (portCount === 0 && stbdCount > 0) notes.push(`PORT has no ${qual}-qualified members.`);
-    if (stbdCount === 0 && portCount > 0) notes.push(`STBD has no ${qual}-qualified members.`);
+    const qualCounts = sections.map(section => ({
+      name: section.name,
+      count: countQual(section.members, qual)
+    }));
+    const strongest = Math.max(...qualCounts.map(section => section.count));
+    qualCounts
+      .filter(section => section.count === 0 && strongest > 0)
+      .forEach(section => notes.push(`${section.name} has no ${qual}-qualified members.`));
   });
 
-  return notes;
+  return notes.length > 0 ? notes : ["No section staffing imbalances detected."];
 }
 
 // ---------- Readiness ----------
@@ -2404,22 +3307,28 @@ function checkReadiness(sectionName) {
   };
 }
 
-function getDayWorkerStandbyOptions(requiredQual) {
-  const dayWorkers = getGroup("Day Worker").filter(member => member.status === "Available");
-  return dayWorkers.filter(member => memberHasQual(member, requiredQual));
+function getDayWorkerStandbyOptions(requiredQual, sectionName = null) {
+  const reliefSection = getDayWorkSectionForDate(dashboardDutyDate);
+  const standbySections = ["Day Worker"];
+  if (reliefSection && reliefSection !== sectionName) standbySections.push(reliefSection);
+
+  return sortMembers(crew.filter(member =>
+    standbySections.includes(member.section) &&
+    member.status === "Available" &&
+    memberHasQual(member, requiredQual)
+  ));
 }
 
 function renderReadinessCheck() {
-  const port = checkReadiness("PORT");
-  const stbd = checkReadiness("STBD");
+  const results = getConfiguredSectionNames().map(checkReadiness);
+  const reliefSection = getDayWorkSectionForDate(dashboardDutyDate);
 
   pageTitle.textContent = "Readiness Check";
-  pageSubtitle.textContent = "Check section readiness and Day Worker standby options";
+  pageSubtitle.textContent = "Check every section and available relief coverage";
 
   content.innerHTML = `
     <section class="dashboard-grid">
-      ${renderReadinessPanel(port)}
-      ${renderReadinessPanel(stbd)}
+      ${results.map(renderReadinessPanel).join("")}
 
       <div class="panel wide">
         <h3>Minimum Duty Requirements</h3>
@@ -2428,7 +3337,7 @@ function renderReadinessCheck() {
         </div>
 
         <p class="member-notes">
-          Day Workers do not count toward normal PORT/STBD readiness. They are only shown as standby options when a section is missing a required qualification.
+          CDO is not included in station duty readiness. Permanent Day Workers${reliefSection ? ` and ${reliefSection}, the relief section for ${dashboardDutyDate}` : ""} are shown only as standby options.
         </p>
       </div>
     </section>
@@ -2457,7 +3366,7 @@ function renderReadinessPanel(result) {
             <div class="standby-list">
               ${
                 result.missing.map(req => {
-                  const options = getDayWorkerStandbyOptions(req);
+                  const options = getDayWorkerStandbyOptions(req, result.section);
 
                   if (options.length === 0) {
                     return `
@@ -2495,50 +3404,47 @@ function renderReadinessPanel(result) {
 
 // ---------- Smart Assignment ----------
 function recommendSectionForNewMember(dept, quals) {
-  const port = getGroup("PORT");
-  const stbd = getGroup("STBD");
+  const sections = getConfiguredSectionNames().map(name => ({
+    name,
+    members: getGroup(name),
+    score: 0,
+    reasons: []
+  }));
 
-  let portScore = 0;
-  let stbdScore = 0;
+  const awardLowest = (getCount, weight, reason) => {
+    const counts = sections.map(section => getCount(section.members));
+    const minimum = Math.min(...counts);
+    if (Math.max(...counts) === minimum) return;
+    sections.forEach((section, index) => {
+      if (counts[index] === minimum) {
+        section.score += weight;
+        section.reasons.push(reason(section.name));
+      }
+    });
+  };
 
-  const portReasons = [];
-  const stbdReasons = [];
-
-  if (port.length < stbd.length) {
-    portScore += smartSettings.personnelWeight;
-    portReasons.push("PORT currently has fewer total personnel.");
-  } else if (stbd.length < port.length) {
-    stbdScore += smartSettings.personnelWeight;
-    stbdReasons.push("STBD currently has fewer total personnel.");
-  }
-
-  const portDept = countDept(port, dept);
-  const stbdDept = countDept(stbd, dept);
-
-  if (portDept < stbdDept) {
-    portScore += smartSettings.departmentWeight;
-    portReasons.push(`PORT currently has fewer ${dept} personnel.`);
-  } else if (stbdDept < portDept) {
-    stbdScore += smartSettings.departmentWeight;
-    stbdReasons.push(`STBD currently has fewer ${dept} personnel.`);
-  }
+  awardLowest(
+    members => members.length,
+    smartSettings.personnelWeight,
+    name => `${name} currently has fewer total personnel.`
+  );
+  awardLowest(
+    members => countDept(members, dept),
+    smartSettings.departmentWeight,
+    name => `${name} currently has fewer ${dept} personnel.`
+  );
 
   quals.forEach(qual => {
-    const portQual = countQual(port, qual);
-    const stbdQual = countQual(stbd, qual);
-    const weight = smartSettings.criticalQualWeights[qual] || smartSettings.qualificationWeight;
-
-    if (portQual < stbdQual) {
-      portScore += weight;
-      portReasons.push(`PORT currently has fewer ${qual}-qualified members.`);
-    } else if (stbdQual < portQual) {
-      stbdScore += weight;
-      stbdReasons.push(`STBD currently has fewer ${qual}-qualified members.`);
-    }
+    awardLowest(
+      members => countQual(members, qual),
+      smartSettings.criticalQualWeights[qual] || smartSettings.qualificationWeight,
+      name => `${name} currently has fewer ${qual}-qualified members.`
+    );
   });
 
-  const recommendation = portScore >= stbdScore ? "PORT" : "STBD";
-  const reasons = recommendation === "PORT" ? portReasons : stbdReasons;
+  sections.sort((a, b) => b.score - a.score || a.members.length - b.members.length);
+  const recommendation = sections[0]?.name || getConfiguredSectionNames()[0];
+  const reasons = sections[0]?.reasons || [];
 
   if (reasons.length === 0) {
     reasons.push(`${recommendation} selected as the default because no major imbalance was detected.`);
@@ -2546,8 +3452,7 @@ function recommendSectionForNewMember(dept, quals) {
 
   return {
     recommendation,
-    portScore,
-    stbdScore,
+    scores: Object.fromEntries(sections.map(section => [section.name, section.score])),
     reasons
   };
 }
@@ -2583,7 +3488,7 @@ function runModalSmartAssignment() {
 
 function getSmartModeDescription(mode) {
   if (mode === "Balanced") {
-    return "Balanced mode keeps PORT and STBD generally even across personnel, departments, and qualifications.";
+    return "Balanced mode keeps configured duty sections generally even across personnel, departments, and qualifications.";
   }
 
   if (mode === "Readiness Focused") {
@@ -2620,7 +3525,7 @@ function renderSmartSettingToggle(toggleKey, weightKey, label) {
 
 function renderSmartAssignmentSettings() {
   pageTitle.textContent = "Smart Assignment Settings";
-  pageSubtitle.textContent = "Choose how Watch Keeper recommends PORT and STBD assignments";
+  pageSubtitle.textContent = "Choose how Watch Keeper recommends duty section assignments";
 
   const isCustom = smartSettings.philosophy === "Custom";
 
@@ -2805,10 +3710,32 @@ function getAssetSummary() {
 
 function sortAssetsByType(assetList) {
   const typeOrder = [
+    "154 WPC Fast Response Cutter",
+    "110 WPB Island Class",
+    "87 WPB Marine Protector",
+    "75 WLIC River Buoy Tender",
+    "65 WLR River Tender",
+    "52 MLB",
+    "49 BUSL",
+    "47 MLB",
     "45 RB-M",
+    "42 SPC-NLB",
+    "38 SPC-TB",
+    "36 SPC-TB",
     "33 SPC-LE",
+    "32 TPSB",
     "29 RBS-II",
+    "27 SPC-SW",
+    "26 TANB",
+    "25 RB-S",
     "24 SPC-SW",
+    "23 OTH",
+    "18 SPC-AIR",
+    "Response Trailer",
+    "ATON Vehicle",
+    "Command Vehicle",
+    "Utility Vehicle",
+    "Trailer",
     "Other"
   ];
 
@@ -3041,6 +3968,18 @@ function renderScenarioBuilder() {
       <div class="panel">
         <h3>Mission Tools</h3>
 
+        <label for="missionPersonnelSearch">Find Personnel</label>
+        <input
+          id="missionPersonnelSearch"
+          type="search"
+          value="${missionPersonnelSearch}"
+          placeholder="Search name, rank, section, or qualification"
+          oninput="searchMissionPersonnel(this.value)"
+        >
+        <div id="missionPersonnelSearchResults">
+          ${renderMissionPersonnelSearchResults()}
+        </div>
+
         <button class="primary-btn scenario-btn" onclick="showDailyCrewPlanner()">
           Daily Duty Patrol Planner
         </button>
@@ -3067,6 +4006,49 @@ function renderScenarioBuilder() {
     </section>
   `;
 }
+
+function renderMissionPersonnelSearchResults() {
+  if (!missionPersonnelSearch.trim()) {
+    return `<p class="empty-text">Search the roster without leaving mission planning.</p>`;
+  }
+
+  const query = missionPersonnelSearch.toLowerCase();
+  const matches = sortMembers(crew.filter(member => {
+    const searchable = [
+      getFullDisplayName(member),
+      member.section,
+      member.dept,
+      member.title,
+      ...(member.quals || [])
+    ].join(" ").toLowerCase();
+
+    return searchable.includes(query);
+  })).slice(0, 12);
+
+  if (matches.length === 0) {
+    return `<p class="empty-text">No matching personnel.</p>`;
+  }
+
+  return `
+    <div class="person-search-results">
+      ${matches.map(member => `
+        <button
+          class="person-search-result"
+          onclick="viewPersonnelDetails(${crew.indexOf(member)})"
+        >
+          <strong>${getFullDisplayName(member)}</strong>
+          <span>${member.section} | ${(member.quals || []).join(", ") || "No qualifications listed"}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+window.searchMissionPersonnel = function(value) {
+  missionPersonnelSearch = value || "";
+  const results = document.getElementById("missionPersonnelSearchResults");
+  if (results) results.innerHTML = renderMissionPersonnelSearchResults();
+};
 
 function showAvailabilityScenarioPanel() {
   const sortedCrew = sortMembers(crew);
@@ -3144,6 +4126,10 @@ function showCrewGeneratorPanel() {
 const trackedQualificationOptions = [
   "PCXC",
   "CXC",
+  "TAC CXC",
+  "TAC CR",
+  "HWCXC",
+  "SURFMAN",
   "Engineer",
   "Boarding Team Member",
   "Boat Crewman",
@@ -3174,9 +4160,14 @@ function getTrackedQualSummary(member) {
 }
 
 function getSingleTrackedQualStatus(item) {
+  const dueStatus = item.dueDate ? getQualDueStatus(item.dueDate) : null;
+  const overdueLabel = dueStatus?.className === "qual-overdue"
+    ? ` | ${dueStatus.label}`
+    : "";
+
   if (item.status === "ET") {
     return {
-      label: `ET for ${item.qual}`,
+      label: `ET for ${item.qual}${overdueLabel}`,
       className: "qual-problem-text",
       isProblem: true
     };
@@ -3184,22 +4175,18 @@ function getSingleTrackedQualStatus(item) {
 
   if (item.status === "PERFORMANCE PROBATION") {
     return {
-      label: `Performance probation for ${item.qual}`,
+      label: `Performance probation for ${item.qual}${overdueLabel}`,
       className: "qual-problem-text",
       isProblem: true
     };
   }
 
-  if (item.dueDate) {
-    const status = getQualDueStatus(item.dueDate);
-
-    if (status.className === "qual-overdue") {
-      return {
-        label: `OVERDUE for ${item.qual}`,
-        className: "qual-problem-text",
-        isProblem: true
-      };
-    }
+  if (dueStatus?.className === "qual-overdue") {
+    return {
+      label: `OVERDUE for ${item.qual}`,
+      className: "qual-problem-text",
+      isProblem: true
+    };
   }
 
   return {
@@ -3236,7 +4223,6 @@ function showDailyCrewPlanner() {
   );
 
   const missionDate = dashboardDutyDate;
-  const availableCrew = getAvailableCrewForMissionDate(missionDate);
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
@@ -3247,7 +4233,7 @@ function showDailyCrewPlanner() {
     </div>
 
     <label>Duty Date</label>
-    <input id="dailyCrewDate" type="date" value="${dashboardDutyDate}">
+    <input id="dailyCrewDate" type="date" value="${dashboardDutyDate}" onchange="refreshCrewSelectionWarnings()">
 
     <label>Patrol / Underway Type</label>
     <select id="dailyCrewType">
@@ -3258,10 +4244,22 @@ function showDailyCrewPlanner() {
     </select>
 
     <label>Start Time</label>
-    <input id="dailyCrewStartTime" type="time">
+    <input
+      id="dailyCrewStartTime"
+      type="text"
+      inputmode="${appSettings.timeFormat === "12" ? "text" : "numeric"}"
+      placeholder="${getTimeEntryPlaceholder()}"
+      onblur="normalizeTimeInput(this)"
+    >
 
     <label>End Time</label>
-    <input id="dailyCrewEndTime" type="time">
+    <input
+      id="dailyCrewEndTime"
+      type="text"
+      inputmode="${appSettings.timeFormat === "12" ? "text" : "numeric"}"
+      placeholder="${getTimeEntryPlaceholder()}"
+      onblur="normalizeTimeInput(this)"
+    >
 
     <label>Asset</label>
     <select id="dailyCrewAsset">
@@ -3279,29 +4277,19 @@ function showDailyCrewPlanner() {
     <h4>Crew Assignment</h4>
 
     <label>Coxswain / PCXC / CXC</label>
-    <select id="dailyCrewCoxswain">
-      ${renderQualifiedCrewOptions("Coxswain", missionDate)}
-    </select>
+    ${renderSearchableCrewSelect("dailyCrewCoxswain", renderQualifiedCrewOptions("Coxswain", missionDate), "dailyCrewDate")}
 
     <label>Engineer</label>
-    <select id="dailyCrewEngineer">
-      ${renderQualifiedCrewOptions("Engineer", missionDate)}
-    </select>
+    ${renderSearchableCrewSelect("dailyCrewEngineer", renderQualifiedCrewOptions("Engineer", missionDate), "dailyCrewDate")}
 
     <label>Boarding Officer</label>
-    <select id="dailyCrewBO">
-      ${renderQualifiedCrewOptions("BO", missionDate)}
-    </select>
+    ${renderSearchableCrewSelect("dailyCrewBO", renderQualifiedCrewOptions("BO", missionDate), "dailyCrewDate")}
 
     <label>Boarding Team Member</label>
-    <select id="dailyCrewBTM">
-      ${renderQualifiedCrewOptions("BTM", missionDate)}
-    </select>
+    ${renderSearchableCrewSelect("dailyCrewBTM", renderQualifiedCrewOptions("BTM", missionDate), "dailyCrewDate")}
 
     <label>Crewman / Additional Crew</label>
-    <select id="dailyCrewCR">
-      ${renderQualifiedCrewOptions("Crewman", missionDate)}
-    </select>
+    ${renderSearchableCrewSelect("dailyCrewCR", renderQualifiedCrewOptions("Crewman", missionDate), "dailyCrewDate")}
 
     <label>Notes</label>
     <textarea id="dailyCrewNotes" placeholder="Example: required patrol, local RBS, training underway, etc."></textarea>
@@ -3315,9 +4303,19 @@ function showDailyCrewPlanner() {
 window.saveManualDailyDutyCrew = function() {
   const dutyDate = document.getElementById("dailyCrewDate").value || dashboardDutyDate;
   const crewType = document.getElementById("dailyCrewType").value;
-  const startTime = document.getElementById("dailyCrewStartTime").value;
-  const endTime = document.getElementById("dailyCrewEndTime").value;
+  const startTimeInput = document.getElementById("dailyCrewStartTime");
+  const endTimeInput = document.getElementById("dailyCrewEndTime");
+  const startTime = parseTimeEntry(startTimeInput.value);
+  const endTime = parseTimeEntry(endTimeInput.value);
   const notes = document.getElementById("dailyCrewNotes").value.trim();
+
+  if (startTime === null || endTime === null) {
+    const invalidInput = startTime === null ? startTimeInput : endTimeInput;
+    normalizeTimeInput(invalidInput);
+    invalidInput.reportValidity();
+    invalidInput.focus();
+    return;
+  }
 
   const missionAssets = assets.filter(asset =>
     asset.status === "FMC" || asset.status === "PMC"
@@ -3358,22 +4356,7 @@ window.saveManualDailyDutyCrew = function() {
     }
   ].filter(item => item.member);
 
-  const leaveConflicts = selectedRoles.filter(item => {
-    const memberIndex = crew.indexOf(item.member);
-    return isMemberOnLeaveForDate(memberIndex, dutyDate);
-  });
-
-  if (leaveConflicts.length > 0) {
-    const conflictNames = leaveConflicts
-      .map(item => `${item.role}: ${getFullDisplayName(item.member)}`)
-      .join(", ");
-
-    const continueSave = confirm(
-      `Warning: The following assigned crew are on leave for ${dutyDate}: ${conflictNames}. Save anyway?`
-    );
-
-    if (!continueSave) return;
-  }
+  if (!confirmCrewLeaveSelections(selectedRoles, dutyDate)) return;
 
   const plannedCrew = {
     id: Date.now(),
@@ -3396,7 +4379,7 @@ window.saveManualDailyDutyCrew = function() {
     <div class="scenario-readiness ready-panel">
       <h4>Daily Patrol Crew Saved</h4>
       <p><strong>${crewType}</strong> saved for ${dutyDate}.</p>
-      <p><strong>Time:</strong> ${startTime || "Not listed"} - ${endTime || "Not listed"}</p>
+      <p><strong>Time:</strong> ${formatTimeValue(startTime)} - ${formatTimeValue(endTime)}</p>
       <p>This crew will appear on the Dashboard when that date is selected.</p>
     </div>
   `;
@@ -3423,9 +4406,13 @@ function checkReadinessFromList(sectionName, crewList) {
   };
 }
 
-function getDayWorkerOptionsFromList(requiredQual, crewList) {
+function getDayWorkerOptionsFromList(requiredQual, crewList, dateString = dashboardDutyDate) {
+  const reliefSection = getDayWorkSectionForDate(dateString);
+  const standbySections = ["Day Worker"];
+  if (reliefSection) standbySections.push(reliefSection);
+
   return sortMembers(crewList.filter(member =>
-    member.section === "Day Worker" &&
+    standbySections.includes(member.section) &&
     member.status === "Available" &&
     memberHasQual(member, requiredQual)
   ));
@@ -3747,33 +4734,19 @@ window.removeMemberFromQualificationTracking = function(index) {
 };
 
 function getQualificationSummary() {
-  let overdue = 0;
-  let dueSoon = 0;
-  let et = 0;
-  let trainingProbation = 0;
-
   const trackedCrew = getTrackedQualificationCrew();
 
-  trackedCrew.forEach(member => {
-    getMemberTrackedQuals(member).forEach(item => {
-      const status = getSingleTrackedQualStatus(item);
-
-      if (status.label.includes("OVERDUE")) overdue++;
-      if (item.status === "ET") et++;
-      if (item.status === "PERFORMANCE PROBATION") trainingProbation++;
-
-      if (item.dueDate) {
-        const dueStatus = getQualDueStatus(item.dueDate);
-        if (dueStatus.className === "qual-warning") dueSoon++;
-      }
-    });
-  });
-
   return {
-    overdue,
-    dueSoon,
-    et,
-    trainingProbation
+    overdue: trackedCrew.filter(memberHasOverdueQual).length,
+    dueSoon: trackedCrew.filter(memberHasDueSoonQual).length,
+    et: trackedCrew.filter(member =>
+      getMemberTrackedQuals(member).some(item => item.status === "ET") ||
+      member.qualificationStatus === "ET"
+    ).length,
+    trainingProbation: trackedCrew.filter(member =>
+      getMemberTrackedQuals(member).some(item => item.status === "PERFORMANCE PROBATION") ||
+      member.qualificationStatus === "TRAINING PROBATION"
+    ).length
   };
 }
 
@@ -3804,20 +4777,17 @@ function memberMatchesQualificationFilter(member) {
   }
 
   if (qualificationFilter === "Due Soon") {
-    if (!member.qualDueDates) return false;
-
-    return Object.values(member.qualDueDates).some(dateString => {
-      const status = getQualDueStatus(dateString);
-      return status.className === "qual-warning";
-    });
+    return memberHasDueSoonQual(member);
   }
 
   if (qualificationFilter === "ET") {
-    return member.qualificationStatus === "ET";
+    return getMemberTrackedQuals(member).some(item => item.status === "ET") ||
+      member.qualificationStatus === "ET";
   }
 
   if (qualificationFilter === "Training Probation") {
-    return member.qualificationStatus === "TRAINING PROBATION";
+    return getMemberTrackedQuals(member).some(item => item.status === "PERFORMANCE PROBATION") ||
+      member.qualificationStatus === "TRAINING PROBATION";
   }
 
   return true;
@@ -3836,10 +4806,10 @@ function getQualDueStatus(dateString) {
     };
   }
 
-  const today = new Date();
+  const today = parseLocalDate(getLocalDateString());
   today.setHours(0, 0, 0, 0);
 
-  const dueDate = new Date(dateString);
+  const dueDate = parseLocalDate(dateString);
   dueDate.setHours(0, 0, 0, 0);
 
   const daysUntil = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
@@ -3865,12 +4835,30 @@ function getQualDueStatus(dateString) {
 }
 
 function memberHasOverdueQual(member) {
+  const trackedOverdue = getMemberTrackedQuals(member).some(item =>
+    item.dueDate && getQualDueStatus(item.dueDate).className === "qual-overdue"
+  );
+
+  if (trackedOverdue) return true;
   if (!member.qualDueDates) return false;
 
   return Object.values(member.qualDueDates).some(dateString => {
     const status = getQualDueStatus(dateString);
     return status.className === "qual-overdue";
   });
+}
+
+function memberHasDueSoonQual(member) {
+  const trackedDueSoon = getMemberTrackedQuals(member).some(item =>
+    item.dueDate && getQualDueStatus(item.dueDate).className === "qual-warning"
+  );
+
+  if (trackedDueSoon) return true;
+  if (!member.qualDueDates) return false;
+
+  return Object.values(member.qualDueDates).some(dateString =>
+    getQualDueStatus(dateString).className === "qual-warning"
+  );
 }
 
 function showPrintCenter() {
@@ -4141,8 +5129,9 @@ window.runScenario = function() {
     affectedMembers.push(simulatedCrew[originalIndex]);
   });
 
-  const portResult = checkReadinessFromList("PORT", simulatedCrew);
-  const stbdResult = checkReadinessFromList("STBD", simulatedCrew);
+  const sectionResults = getConfiguredSectionNames().map(sectionName =>
+    checkReadinessFromList(sectionName, simulatedCrew)
+  );
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
@@ -4155,8 +5144,7 @@ window.runScenario = function() {
       </ul>
     </div>
 
-    ${renderScenarioReadinessResult(portResult, simulatedCrew)}
-    ${renderScenarioReadinessResult(stbdResult, simulatedCrew)}
+    ${sectionResults.map(result => renderScenarioReadinessResult(result, simulatedCrew)).join("")}
   `;
 };
 
@@ -4198,11 +5186,13 @@ window.generateDailyDutyCrewDraft = function() {
   if (crewType === "Mission Crew") missionType = selectedAsset.missionProfile || "SAR";
 
   const generatedCrew = buildMissionCrewForType(missionType);
-  const availableCrew = getAvailableCrewForGenerators();
+  const availableCrew = getAvailableCrewForMissionDate(dutyDate);
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="mission-package-report">
       <h3>Daily Duty Crew Draft</h3>
+
+      <input id="draftDailyCrewDate" type="hidden" value="${dutyDate}">
 
       <div class="scenario-summary">
         <p><strong>Duty Date:</strong> ${dutyDate}</p>
@@ -4214,18 +5204,21 @@ window.generateDailyDutyCrewDraft = function() {
       <div class="scenario-readiness ${generatedCrew.missingRoles.length === 0 ? "ready-panel" : "not-ready-panel"}">
         <h4>Review / Override Crew</h4>
 
-        ${Object.keys(generatedCrew.filledRoles).map(role => `
+        ${Object.keys(generatedCrew.filledRoles).map((role, roleIndex) => `
           <label>${role}</label>
-          <select class="daily-role-select" data-role="${role}">
-            ${availableCrew.map(member => `
+          ${renderSearchableCrewSelect(
+            `dailyRoleSelect_${roleIndex}`,
+            availableCrew.map(member => `
               <option
                 value="${crew.indexOf(member)}"
                 ${crew.indexOf(member) === crew.indexOf(generatedCrew.filledRoles[role]) ? "selected" : ""}
               >
                 ${getFullDisplayName(member)} - ${member.section}
               </option>
-            `).join("")}
-          </select>
+            `).join(""),
+            "draftDailyCrewDate",
+            `class="daily-role-select" data-role="${role}"`
+          )}
         `).join("")}
 
         ${
@@ -4279,22 +5272,7 @@ window.saveDailyDutyCrew = function(dutyDate, crewType, selectedAssetIndex, note
     dutyDate
   };
 
-  const leaveConflicts = selectedRoles.filter(item => {
-    const memberIndex = crew.indexOf(item.member);
-    return isMemberOnLeaveForDate(memberIndex, dutyDate);
-  });
-
-  if (leaveConflicts.length > 0) {
-    const conflictNames = leaveConflicts
-      .map(item => `${item.role}: ${getFullDisplayName(item.member)}`)
-      .join(", ");
-
-    const continueSave = confirm(
-      `Warning: The following assigned crew are on leave for ${dutyDate}: ${conflictNames}. Save anyway?`
-    );
-
-    if (!continueSave) return;
-  }
+  if (!confirmCrewLeaveSelections(selectedRoles, dutyDate)) return;
 
   plannedCrews.push(plannedCrew);
   savePlannedCrews();
@@ -4315,28 +5293,19 @@ function getAvailableCrewForGenerators() {
 
   return sortMembers(crew.filter((member, index) =>
     member.status === "Available" &&
+    member.dept !== "Galley" &&
+    !isDepartedMember(member) &&
     !unavailableIndexes.includes(index) &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
+    [...getConfiguredSectionNames(), "Day Worker"].includes(member.section)
   ));
 }
 
 function getAvailableCrewForMissionDate(missionDate) {
-  const leaveForDate = getLeaveItemsForDate(missionDate);
-  const unavailableIndexes = leaveForDate.map(item => item.memberIndex);
-
-  return sortMembers(crew.filter((member, index) =>
-    member.status === "Available" &&
-    !unavailableIndexes.includes(index) &&
+  return sortMembers(crew.filter(member =>
+    !["Medical", "Restricted", "TDY"].includes(member.status) &&
+    !isDepartedMember(member) &&
     member.dept !== "Galley" &&
-    (
-      member.section === "PORT" ||
-      member.section === "STBD" ||
-      member.section === "Day Worker"
-    )
+    [...getConfiguredSectionNames(), "Day Worker"].includes(member.section)
   ));
 }
 
@@ -4420,14 +5389,14 @@ window.generateSkeletonCrew = function() {
     PG: member => memberHasQual(member, "PG"),
     ENG: member => memberHasQual(member, "ENG"),
     BO: member => memberHasQual(member, "BO"),
-    BTM: member => memberHasQual(member, "BTM") || memberHasQual(member, "BO")
+    BTM: member => memberHasQual(member, "BTM")
   };
 
   const result = buildCrewFromRoles(requiredRoles, roleChecks);
 
   renderCrewResult(
     "Skeleton Crew Generator",
-    "Watch Keeper attempted to build a bare-minimum crew using available PORT, STBD, and Day Worker personnel.",
+    "Watch Keeper attempted to build a bare-minimum crew using available duty-section and Day Worker personnel.",
     requiredRoles,
     result.filledRoles,
     result.missingRoles
@@ -4461,7 +5430,7 @@ window.generateSarCrew = function() {
 
   renderCrewResult(
     "SAR Crew Generator",
-    "Watch Keeper attempted to build a SAR crew using available PORT, STBD, and Day Worker personnel.",
+    "Watch Keeper attempted to build a SAR crew using available duty-section and Day Worker personnel.",
     requiredRoles,
     result.filledRoles,
     result.missingRoles,
@@ -4498,7 +5467,7 @@ window.generatePursuitCrew = function() {
 
   renderCrewResult(
     "Pursuit Crew Generator",
-    "Watch Keeper attempted to build a pursuit-capable crew using available PORT, STBD, and Day Worker personnel.",
+    "Watch Keeper attempted to build a pursuit-capable crew using available duty-section and Day Worker personnel.",
     requiredRoles,
     result.filledRoles,
     result.missingRoles,
@@ -4531,7 +5500,7 @@ window.generateRandomCrew = function() {
 
   renderCrewResult(
     "Random Crew Generator",
-    "Watch Keeper randomly selected a crew from available PORT, STBD, and Day Worker personnel.",
+    "Watch Keeper randomly selected a crew from available duty-section and Day Worker personnel.",
     requiredRoles,
     result.filledRoles,
     result.missingRoles
@@ -4612,7 +5581,7 @@ window.generateTrainingCrew = function() {
   document.getElementById("scenarioResult").innerHTML = `
     <div class="scenario-summary">
       <h4>${trainingType}</h4>
-      <p>Watch Keeper generated a training crew using available PORT, STBD, and Day Worker personnel.</p>
+      <p>Watch Keeper generated a training crew using available duty-section and Day Worker personnel.</p>
     </div>
 
     <div class="scenario-readiness ${missingTrainingPiece ? "not-ready-panel" : "ready-panel"}">
@@ -4675,7 +5644,7 @@ function renderLeave() {
 
       
 
-      <div class="panel wide">
+      <div class="panel wide" id="leaveFormPanel">
         <h3>Add Leave Entry</h3>
 
         <label>Member</label>
@@ -4712,7 +5681,7 @@ function renderLeave() {
         <label>Notes</label>
         <textarea id="leaveNotes"></textarea>
 
-        <button class="primary-btn" onclick="addLeaveItem()">
+        <button class="primary-btn" id="saveLeaveButton" onclick="addLeaveItem()">
           Add Leave Entry
         </button>
       </div>
@@ -4860,6 +5829,23 @@ window.toggleLeaveMatrixViewMode = function() {
   renderLeave();
 };
 
+window.changeLeaveMatrixMonth = function(direction) {
+  calendarMonth += direction;
+
+  if (calendarMonth < 0) {
+    calendarMonth = 11;
+    calendarYear--;
+  }
+
+  if (calendarMonth > 11) {
+    calendarMonth = 0;
+    calendarYear++;
+  }
+
+  selectedLeaveMatrixItemId = null;
+  renderLeave();
+};
+
 function renderSelectedLeaveMatrixDetails() {
   const item = leaveItems.find(
     item => item.id === selectedLeaveMatrixItemId
@@ -4925,21 +5911,26 @@ window.editSelectedLeaveMatrixItem = function() {
   document.getElementById("leaveNotes").value = item.notes || "";
 
   document.getElementById("saveLeaveButton").textContent = "Update Leave Entry";
+  document.getElementById("leaveFormPanel")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
 };
 
-function editSelectedLeaveMatrixItem() {
+window.deleteSelectedLeaveMatrixItem = function() {
   const item = leaveItems.find(item => item.id === selectedLeaveMatrixItemId);
   if (!item) return;
 
-  // Implement the logic to edit the selected leave matrix item
-}
+  leaveItems = leaveItems.filter(item => item.id !== selectedLeaveMatrixItemId);
+  selectedLeaveMatrixItemId = null;
 
-function deleteSelectedLeaveMatrixItem() {
-  const item = leaveItems.find(item => item.id === selectedLeaveMatrixItemId);
-  if (!item) return;
+  if (editingLeaveItemId === item.id) {
+    editingLeaveItemId = null;
+  }
 
-  // Implement the logic to delete the selected leave matrix item
-}
+  saveLeaveItems();
+  renderLeave();
+};
 
 function getLeaveTypeCode(leaveType) {
   const codes = {
@@ -5069,8 +6060,11 @@ function renderLeaveMatrix() {
   const data = getLeaveMatrixMonthData();
 
   const groups = [
-    { title: "PORT", members: getGroup("PORT") },
-    { title: "STBD", members: getGroup("STBD") },
+    ...getConfiguredSections().map(section => ({
+      title: section.name,
+      members: getGroup(section.name),
+      style: getSectionInlineStyle(section.name, 0.18)
+    })),
     { title: "Day Workers", members: getGroup("Day Worker") },
     { title: "Reservists", members: getGroup("Reservist") },
     { title: "TDY to Station", members: getGroup("TDY to Station") }
@@ -5081,12 +6075,12 @@ function renderLeaveMatrix() {
       <button class="secondary-btn" onclick="toggleLeaveMatrixViewMode()">
         ${leaveMatrixViewMode === "normal" ? "Full Month View" : "Scrollable View"}
       </button>
-      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(-1)">Previous</button>
+      <button class="secondary-btn" onclick="changeLeaveMatrixMonth(-1)">Previous</button>
       <h3>${data.monthName} ${data.year}</h3>
-      <button class="secondary-btn" onclick="changeLeaveCalendarMonth(1)">Next</button>
+      <button class="secondary-btn" onclick="changeLeaveMatrixMonth(1)">Next</button>
     </div>
 
-    <div class="leave-matrix ${leaveMatrixViewMode === "full" ? "full-month" : ""}">
+    <div class="leave-matrix ${leaveMatrixViewMode === "full" ? "full-month" : ""}" style="--leave-days:${data.daysInMonth};">
       <div class="leave-matrix-header">
         <div class="leave-name-cell">Name</div>
         ${Array.from({ length: data.daysInMonth }, (_, i) => `
@@ -5095,7 +6089,7 @@ function renderLeaveMatrix() {
       </div>
 
       ${groups.map(group => `
-        <div class="leave-section-row">${group.title}</div>
+        <div class="leave-section-row" style="${group.style || ""}">${group.title}</div>
 
         ${
           group.members.length === 0
@@ -5124,8 +6118,8 @@ function renderLeaveMatrix() {
 
                     return `
                       <div
-                        class="leave-day-cell leave-entry-cell"
-                        onclick="${leaveForDay ? `selectLeaveMatrixItem(${leaveForDay.id})` : ""}"
+                        class="leave-day-cell leave-entry-cell ${leaveForDay ? "filled-leave-cell" : "empty-leave-cell"}"
+                        onclick="${leaveForDay ? `selectLeaveMatrixItem(${leaveForDay.id})` : `startLeaveFromMatrixCell(${memberIndex}, '${dateString}')`}"
                         style="${leaveForDay ? `background:${getLeaveTypeColor(leaveForDay.leaveType)};` : ""}"
                         title="${leaveForDay ? `${leaveForDay.leaveType} | ${leaveForDay.startDate} to ${leaveForDay.endDate}` : ""}"
                       >
@@ -5174,6 +6168,30 @@ function getLeaveMatrixMonthData() {
 window.selectLeaveMatrixItem = function(id) {
   selectedLeaveMatrixItemId = id;
   renderLeave();
+};
+
+window.startLeaveFromMatrixCell = function(memberIndex, dateString) {
+  selectedLeaveMatrixItemId = null;
+  editingLeaveItemId = null;
+
+  const memberSelect = document.getElementById("leaveMember");
+  const startInput = document.getElementById("leaveStartDate");
+  const endInput = document.getElementById("leaveEndDate");
+  const saveButton = document.getElementById("saveLeaveButton");
+
+  if (memberSelect) memberSelect.value = memberIndex;
+  if (startInput) startInput.value = dateString;
+  if (endInput) endInput.value = dateString;
+  if (saveButton) saveButton.textContent = "Add Leave Entry";
+
+  document.getElementById("leaveFormPanel")?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+
+  setTimeout(() => {
+    document.getElementById("leaveType")?.focus();
+  }, 150);
 };
 
 
@@ -5336,7 +6354,7 @@ function getLeaveScenarioRangeImpact(section, startDate, endDate) {
     const standbyOptions = result.ready
       ? []
       : result.missing.flatMap(req =>
-          getDayWorkerOptionsFromList(req, simulatedCrew)
+          getDayWorkerOptionsFromList(req, simulatedCrew, dateString)
         );
 
     let level = "Green";
@@ -5386,8 +6404,10 @@ window.saveScenarioAsLeave = function() {
 window.addLeaveItem = function() {
   const memberIndex = Number(document.getElementById("leaveMember").value);
 
+  const leaveType = document.getElementById("leaveType").value;
   const startDate = document.getElementById("leaveStartDate").value;
   const endDate = document.getElementById("leaveEndDate").value;
+  const notes = document.getElementById("leaveNotes").value.trim();
 
   if (!startDate || !endDate) {
     document.getElementById("leaveStartDate").focus();
@@ -5395,6 +6415,7 @@ window.addLeaveItem = function() {
   }
 
   const existingOverlap = leaveItems.find(item =>
+    item.id !== editingLeaveItemId &&
     item.memberIndex === memberIndex &&
     leaveRangesOverlap(startDate, endDate, item.startDate, item.endDate)
   );
@@ -5419,7 +6440,7 @@ window.addLeaveItem = function() {
     }
 
     editingLeaveItemId = null;
-    selectedLeaveMatrixItemId = null;
+    selectedLeaveMatrixItemId = existingItem ? existingItem.id : null;
 
     saveLeaveItems();
     renderLeave();
@@ -5429,10 +6450,10 @@ window.addLeaveItem = function() {
   leaveItems.push({
     id: Date.now(),
     memberIndex,
-    leaveType: document.getElementById("leaveType").value,
+    leaveType,
     startDate,
     endDate,
-    notes: document.getElementById("leaveNotes").value.trim()
+    notes
   });
 
   saveLeaveItems();
@@ -5488,7 +6509,7 @@ function renderLeaveImpact(item) {
   }
 
   const standbyOptions = result.missing.flatMap(req =>
-    getDayWorkerOptionsFromList(req, getCrewWithLeaveApplied(item.startDate))
+    getDayWorkerOptionsFromList(req, getCrewWithLeaveApplied(item.startDate), item.startDate)
   );
 
   if (standbyOptions.length > 0) {
@@ -5558,7 +6579,8 @@ function renderLeaveCalendarMini() {
 
     cells += `
       <div
-        class="calendar-cell ${section === "PORT" ? "port-day" : "stbd-day"}"
+        class="calendar-cell section-calendar-day"
+        style="${getSectionInlineStyle(section, 0.22)}"
         onclick="selectLeaveDate('${dateString}')"
       >
         <strong>${day}</strong>
@@ -5663,14 +6685,15 @@ function getPlannedCrewLeaveConflictsForDate(dateString) {
   const conflicts = [];
 
   plans.forEach(plan => {
-    plan.crew.forEach(item => {
-      const memberIndex = crew.indexOf(item.member);
+    (plan.crew || []).forEach(item => {
+      const member = getCrewMemberFromPlanItem(item);
+      const memberIndex = crew.indexOf(member);
 
-      if (isMemberOnLeaveForDate(memberIndex, dateString)) {
+      if (memberIndex !== -1 && isMemberOnLeaveForDate(memberIndex, dateString)) {
         conflicts.push({
           plan,
           role: item.role,
-          member: item.member
+          member
         });
       }
     });
@@ -5736,7 +6759,7 @@ function buildMissionCrewForType(missionType) {
     selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
     selectMember("Engineer", member => memberHasQual(member, "ENG"));
     selectMember("Boarding Officer", member => memberHasQual(member, "BO"));
-    selectMember("Boarding Team Member", member => memberHasQual(member, "BTM") || memberHasQual(member, "BO"));
+    selectMember("Boarding Team Member", member => memberHasQual(member, "BTM"));
   } else {
     selectMember("Coxswain", member => memberHasQual(member, "PCX") || memberHasQual(member, "CX"));
     selectMember("Engineer", member => memberHasQual(member, "ENG"));
@@ -5762,7 +6785,7 @@ function buildMissionCrewForType(missionType) {
 }
 
 function renderCrewSelectOptions(selectedIndex = "") {
-  const availableCrew = getAvailableCrewForGenerators();
+  const availableCrew = getAvailableCrewForMissionDate(dashboardDutyDate);
 
   return `
     <option value="">None selected</option>
@@ -5819,6 +6842,25 @@ function renderQualifiedCrewOptions(roleType, missionDate, selectedIndex = "") {
   `;
 }
 
+function renderManualCrewOptionsForDate(missionDate, selectedIndex = "") {
+  const availableCrew = sortMembers(crew.filter(member =>
+    !["Medical", "Restricted", "TDY"].includes(member.status) &&
+    !isDepartedMember(member)
+  ));
+
+  return `
+    <option value="">None selected</option>
+    ${availableCrew.map(member => {
+      const index = crew.indexOf(member);
+      return `
+        <option value="${index}" ${String(index) === String(selectedIndex) ? "selected" : ""}>
+          ${getFullDisplayName(member)} - ${member.section} - ${member.dept}
+        </option>
+      `;
+    }).join("")}
+  `;
+}
+
 window.showMissionPackageBuilder = function() {
   const missionAssets = assets.filter(asset =>
     asset.status === "FMC" || asset.status === "PMC"
@@ -5844,6 +6886,9 @@ window.showMissionPackageBuilder = function() {
         <option>SAR</option>
         <option>LE Boarding</option>
         <option>Pursuit</option>
+        <option>Tactical</option>
+        <option>Heavy Weather</option>
+        <option>Surf</option>
         <option>Training</option>
         <option>Patrol</option>
         <option>Other</option>
@@ -5945,29 +6990,52 @@ window.generateAssetSpecificMissionDraft = function() {
           >
 
           <label>Coxswain / PCXC / CXC</label>
-          <select class="asset-crew-coxswain">
-            ${renderQualifiedCrewOptions("Coxswain", missionDate)}
-          </select>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_coxswain`,
+            renderQualifiedCrewOptions("Coxswain", missionDate),
+            "draftMissionDate",
+            'class="asset-crew-coxswain"'
+          )}
 
           <label>Engineer</label>
-          <select class="asset-crew-engineer">
-            ${renderQualifiedCrewOptions("Engineer", missionDate)}
-          </select>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_engineer`,
+            renderQualifiedCrewOptions("Engineer", missionDate),
+            "draftMissionDate",
+            'class="asset-crew-engineer"'
+          )}
 
           <label>Boarding Officer</label>
-          <select class="asset-crew-bo">
-            ${renderQualifiedCrewOptions("BO", missionDate)}
-          </select>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_bo`,
+            renderQualifiedCrewOptions("BO", missionDate),
+            "draftMissionDate",
+            'class="asset-crew-bo"'
+          )}
 
           <label>Boarding Team Member</label>
-          <select class="asset-crew-btm">
-            ${renderQualifiedCrewOptions("BTM", missionDate)}
-          </select>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_btm`,
+            renderQualifiedCrewOptions("BTM", missionDate),
+            "draftMissionDate",
+            'class="asset-crew-btm"'
+          )}
 
           <label>Crewman / Additional Crew</label>
-          <select class="asset-crew-cr">
-            ${renderQualifiedCrewOptions("Crewman", missionDate)}
-          </select>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_crewman`,
+            renderQualifiedCrewOptions("Crewman", missionDate),
+            "draftMissionDate",
+            'class="asset-crew-cr"'
+          )}
+
+          <label>Manual Support / Galley Assignment</label>
+          ${renderSearchableCrewSelect(
+            `assetCrew_${assetCardIndex}_support`,
+            renderManualCrewOptionsForDate(missionDate),
+            "draftMissionDate",
+            'class="asset-crew-support"'
+          )}
         </div>
       `).join("")}
 
@@ -6039,6 +7107,10 @@ window.finalizeAssetSpecificMissionPackage = function() {
         {
           role: "Crewman / Additional Crew",
           member: crew[Number(card.querySelector(".asset-crew-cr").value)]
+        },
+        {
+          role: "Manual Support / Galley",
+          member: crew[Number(card.querySelector(".asset-crew-support").value)]
         }
       ].filter(item => item.member);
 
@@ -6049,6 +7121,15 @@ window.finalizeAssetSpecificMissionPackage = function() {
       };
     })
     .filter(item => item);
+
+  const allSelectedRoles = assetCrews.flatMap(group =>
+    group.crew.map(item => ({
+      role: `${group.asset.name} - ${item.role}`,
+      member: item.member
+    }))
+  );
+
+  if (!confirmCrewLeaveSelections(allSelectedRoles, missionDate)) return;
 
   const savedPackage = {
     id: Date.now(),
@@ -6176,9 +7257,13 @@ window.addMissionCrewReviewRow = function() {
         placeholder="Role"
       >
 
-      <select class="mission-review-member">
-        ${renderCrewSelectOptions()}
-      </select>
+      <div class="crew-select-control">
+        <input class="crew-select-search" type="search" placeholder="Search personnel" oninput="filterCrewSelect(this)">
+        <select class="mission-review-member" data-date-input="draftMissionDate" onchange="updateCrewSelectionWarning(this)">
+          ${renderCrewSelectOptions()}
+        </select>
+        <div class="crew-selection-warning"></div>
+      </div>
 
       <button class="delete-btn" onclick="this.closest('.mission-crew-review-row').remove()">
         Remove
@@ -6222,6 +7307,8 @@ window.finalizeManualMissionPackageFromReview = function() {
   const location = document.getElementById("draftMissionLocation").value;
   const notes = document.getElementById("draftMissionNotes").textContent;
   const checklistHTML = document.getElementById("draftChecklist").innerHTML;
+
+  if (!confirmCrewLeaveSelections(selectedRoles, missionDate)) return;
 
   const savedPackage = {
     id: Date.now(),
@@ -6424,9 +7511,13 @@ window.generateManualMissionPackage = function() {
                       value="${item.role}"
                     >
 
-                    <select class="mission-review-member">
-                      ${renderCrewSelectOptions(crew.indexOf(item.member))}
-                    </select>
+                    <div class="crew-select-control">
+                      <input class="crew-select-search" type="search" placeholder="Search personnel" oninput="filterCrewSelect(this)">
+                      <select class="mission-review-member" data-date-input="draftMissionDate" onchange="updateCrewSelectionWarning(this)">
+                        ${renderCrewSelectOptions(crew.indexOf(item.member))}
+                      </select>
+                      <div class="crew-selection-warning"></div>
+                    </div>
 
                     <button
                       class="delete-btn"
@@ -6668,11 +7759,13 @@ window.generateMissionPackage = function() {
     .map(input => input.value);
 
   const generatedCrew = buildMissionCrewForType(missionType);
-  const availableCrew = getAvailableCrewForGenerators();
+  const availableCrew = getAvailableCrewForMissionDate(dashboardDutyDate);
 
   document.getElementById("scenarioResult").innerHTML = `
     <div class="mission-package-report">
       <h3>Mission Package Draft</h3>
+
+      <input id="generatedMissionDate" type="hidden" value="${dashboardDutyDate}">
 
       <div class="scenario-summary">
         <p><strong>Mission Type:</strong> ${missionType}</p>
@@ -6687,18 +7780,21 @@ window.generateMissionPackage = function() {
       <div class="scenario-readiness ${generatedCrew.missingRoles.length === 0 ? "ready-panel" : "not-ready-panel"}">
         <h4>Review / Override Crew</h4>
 
-        ${Object.keys(generatedCrew.filledRoles).map(role => `
+        ${Object.keys(generatedCrew.filledRoles).map((role, roleIndex) => `
           <label>${role}</label>
-          <select class="mission-role-select" data-role="${role}">
-            ${availableCrew.map(member => `
+          ${renderSearchableCrewSelect(
+            `missionRoleSelect_${roleIndex}`,
+            availableCrew.map(member => `
               <option
                 value="${crew.indexOf(member)}"
                 ${crew.indexOf(member) === crew.indexOf(generatedCrew.filledRoles[role]) ? "selected" : ""}
               >
                 ${getFullDisplayName(member)} - ${member.section}
               </option>
-            `).join("")}
-          </select>
+            `).join(""),
+            "generatedMissionDate",
+            `class="mission-role-select" data-role="${role}"`
+          )}
         `).join("")}
 
         ${
@@ -6757,6 +7853,9 @@ window.finalizeMissionPackage = function(missionType, selectedAssetIndex) {
 
   const notes = document.getElementById("draftMissionNotes")?.textContent || "";
   const checklistHTML = document.getElementById("draftChecklist")?.innerHTML || "";
+  const missionDate = safeValue("generatedMissionDate", dashboardDutyDate);
+
+  if (!confirmCrewLeaveSelections(selectedRoles, missionDate)) return;
 
   const savedPackage = {
     id: Date.now(),
@@ -7207,26 +8306,149 @@ window.generateMultiAssetMission = function(selectedAssets = null) {
 // ---------- Settings ----------
 function renderSettings() {
   pageTitle.textContent = "Settings";
-  pageSubtitle.textContent = "Manage duty rotation and saved Watch Keeper data";
+  pageSubtitle.textContent = "Manage navigation, duty rotation, and saved Watch Keeper data";
 
   content.innerHTML = `
     <section class="dashboard-grid">
+      <div class="panel wide">
+        <h3>Visible Sidebar Features</h3>
+        <p class="member-notes">
+          Choose the tools this unit needs. Dashboard and Settings always remain available.
+        </p>
+
+        <div class="settings-feature-grid">
+          ${configurablePages.map(page => `
+            <label class="settings-feature-option">
+              <input
+                type="checkbox"
+                value="${page.id}"
+                ${appSettings.visiblePages.includes(page.id) ? "checked" : ""}
+                ${page.required ? "disabled" : ""}
+              >
+              <span>${page.label}</span>
+            </label>
+          `).join("")}
+        </div>
+
+        <button class="primary-btn settings-btn" onclick="saveVisibleSidebarFeatures()">
+          Save Visible Features
+        </button>
+      </div>
+
+      <div class="panel wide">
+        <h3>Unit Data Overview</h3>
+        <div class="cards">
+          <div class="card"><p>Personnel</p><h3>${crew.length}</h3></div>
+          <div class="card"><p>Assets</p><h3>${assets.length}</h3></div>
+          <div class="card"><p>Leave Entries</p><h3>${leaveItems.length}</h3></div>
+          <div class="card"><p>Planned Crews</p><h3>${plannedCrews.length}</h3></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Time Display</h3>
+
+        <label>Time Format</label>
+        <select id="timeFormatSetting">
+          <option value="24" ${appSettings.timeFormat !== "12" ? "selected" : ""}>24-hour</option>
+          <option value="12" ${appSettings.timeFormat === "12" ? "selected" : ""}>12-hour</option>
+        </select>
+
+        <label>Zulu Time Ahead of Local</label>
+        <select id="zuluOffsetSetting">
+          ${Array.from({ length: 13 }, (_, offset) => `
+            <option value="${offset}" ${Number(appSettings.zuluOffsetAhead) === offset ? "selected" : ""}>
+              +${offset} hour${offset === 1 ? "" : "s"} (${getMilitaryZoneLetterForZuluAhead(offset)})
+            </option>
+          `).join("")}
+        </select>
+
+        <p class="member-notes">
+          Select how many hours Zulu is ahead of local time. Zulu remains displayed in 24-hour format.
+        </p>
+
+        <button class="primary-btn settings-btn" onclick="saveTimeDisplaySettings()">
+          Save Time Settings
+        </button>
+
+        <div class="theme-settings-block">
+          <h4>Application Color Theme</h4>
+
+          <label>Theme</label>
+          <select id="appThemeSetting" onchange="changeAppTheme(this.value)">
+            ${Object.entries(appThemeDefinitions).map(([value, theme]) => `
+              <option value="${value}" ${appSettings.theme === value ? "selected" : ""}>
+                ${theme.label}
+              </option>
+            `).join("")}
+          </select>
+
+          <div class="theme-swatch-preview" id="themeSwatchPreview">
+            ${renderThemeSwatches(appSettings.theme)}
+          </div>
+
+          <p class="member-notes">Theme changes save and apply immediately.</p>
+
+          <div id="customThemeControls" class="custom-theme-controls ${appSettings.theme === "custom" ? "" : "hidden"}">
+            <div class="custom-theme-grid">
+              ${Object.entries(customThemeFieldLabels).map(([settingName, label]) => `
+                <label class="custom-theme-field">
+                  <span>${label}</span>
+                  <input
+                    id="customTheme_${settingName}"
+                    type="color"
+                    value="${appSettings.customTheme[settingName]}"
+                    oninput="previewCustomTheme()"
+                  >
+                </label>
+              `).join("")}
+            </div>
+
+            <button class="primary-btn settings-btn" onclick="saveCustomTheme()">
+              Save Custom Palette
+            </button>
+            <p class="member-notes" id="customThemeResult"></p>
+          </div>
+        </div>
+      </div>
+
       <div class="panel">
         <h3>Duty Rotation Settings</h3>
 
-        <label>Current Duty Section</label>
-        <select id="rotationCurrentSection">
-          <option ${rotationSettings.currentSection === "PORT" ? "selected" : ""}>PORT</option>
-          <option ${rotationSettings.currentSection === "STBD" ? "selected" : ""}>STBD</option>
+        <label>Duty Pattern</label>
+        <select id="rotationPattern" onchange="prepareSectionNamesForPattern(this.value)">
+          ${Object.entries(dutyPatternDefinitions).map(([value, definition]) => `
+            <option value="${value}" ${rotationSettings.pattern === value ? "selected" : ""}>
+              ${definition.label}
+            </option>
+          `).join("")}
         </select>
 
-        <label>Current Duty Start Date</label>
+        <label>Rotation Anchor Date</label>
         <input id="rotationStartDate" type="date" value="${rotationSettings.dutyStartDate}">
 
-        <label>Duty Pattern</label>
-        <select id="rotationPattern">
-          <option ${rotationSettings.pattern === "2-on-2-off" ? "selected" : ""}>2-on-2-off</option>
+        <p class="member-notes">
+          For the 2-2-3 rotation, use the Friday when the selected section begins its three-day duty weekend. Section swaps occur every Monday, Wednesday, and Friday.
+        </p>
+
+        <label>Section on Duty at Start</label>
+        <select id="rotationCurrentSection">
+          ${rotationSettings.sections.slice(0, getDutyPatternDefinition().sectionCount).map((section, index) => `
+            <option value="${index}" ${section.name === rotationSettings.currentSection ? "selected" : ""}>${section.name}</option>
+          `).join("")}
         </select>
+
+        <h4>Section Names and Colors</h4>
+        <div class="section-settings-grid">
+          ${rotationSettings.sections.slice(0, 4).map((section, index) => `
+            <div class="section-setting-row">
+              <input id="rotationSectionName${index}" value="${section.name}" aria-label="Section ${index + 1} name" oninput="syncRotationStartSectionOptions()">
+              <input id="rotationSectionColor${index}" type="color" value="${section.color}" aria-label="Section ${index + 1} color">
+            </div>
+          `).join("")}
+        </div>
+
+        <div id="rotationSettingsResult"></div>
 
         <button class="primary-btn settings-btn" onclick="saveDutyRotationSettings()">
           Save Duty Rotation
@@ -7313,14 +8535,126 @@ function renderSettings() {
   `;
 }
 
+function updateSidebarVisibility() {
+  const visiblePages = new Set([
+    ...(appSettings.visiblePages || []),
+    "dashboard",
+    "settings"
+  ]);
+
+  document.querySelectorAll(".nav-btn").forEach(button => {
+    button.classList.toggle("hidden", !visiblePages.has(button.dataset.page));
+  });
+}
+
+window.saveVisibleSidebarFeatures = function() {
+  const selectedPages = [...document.querySelectorAll(".settings-feature-option input:checked")]
+    .map(input => input.value);
+
+  appSettings.visiblePages = [...new Set(["dashboard", "settings", ...selectedPages])];
+  saveAppSettings();
+  updateSidebarVisibility();
+  renderSettings();
+};
+
+window.saveTimeDisplaySettings = function() {
+  appSettings.timeFormat = safeValue("timeFormatSetting", "24");
+  appSettings.zuluOffsetAhead = Number(safeValue("zuluOffsetSetting", "4"));
+  saveAppSettings();
+  updateZuluStatus();
+  renderSettings();
+};
+
 window.saveDutyRotationSettings = function() {
-  rotationSettings.currentSection = safeValue("rotationCurrentSection", "PORT");
-  rotationSettings.dutyStartDate = safeValue("rotationStartDate", new Date().toISOString().slice(0, 10));
-  rotationSettings.pattern = safeValue("rotationPattern", "2-on-2-off");
+  const previousSections = rotationSettings.sections.map(section => section.name);
+  const nextSections = rotationSettings.sections.map((section, index) => ({
+    name: safeValue(`rotationSectionName${index}`, section.name).trim().replace(/[<>"']/g, ""),
+    color: safeValue(`rotationSectionColor${index}`, section.color)
+  }));
+  const pattern = safeValue("rotationPattern", "2-on-2-off");
+  const anchorDate = safeValue("rotationStartDate", getLocalDateString());
+  const requiredCount = dutyPatternDefinitions[pattern]?.sectionCount || 2;
+  const activeNames = nextSections.slice(0, requiredCount).map(section => section.name);
+  const resultBox = document.getElementById("rotationSettingsResult");
+
+  const normalizedActiveNames = activeNames.map(name => name.toLowerCase());
+  if (activeNames.some(name => !name) || new Set(normalizedActiveNames).size !== normalizedActiveNames.length) {
+    if (resultBox) {
+      resultBox.innerHTML = `<div class="scenario-readiness not-ready-panel">Active section names must be filled in and unique.</div>`;
+    }
+    return;
+  }
+
+  if (pattern === "2-on-2-off" && parseLocalDate(anchorDate)?.getDay() !== 5) {
+    if (resultBox) {
+      resultBox.innerHTML = `<div class="scenario-readiness not-ready-panel">The 2-2-3 anchor must be a Friday when the selected section starts its three-day duty weekend.</div>`;
+    }
+    return;
+  }
+
+  const selectedStartIndex = Number(safeValue("rotationCurrentSection", "0"));
+
+  crew.forEach(member => {
+    const oldIndex = previousSections.indexOf(member.section);
+    if (oldIndex >= 0 && nextSections[oldIndex]) member.section = nextSections[oldIndex].name;
+  });
+
+  Object.keys(dutyOverrides).forEach(dateString => {
+    const oldIndex = previousSections.indexOf(dutyOverrides[dateString]);
+    if (oldIndex >= 0 && nextSections[oldIndex]) dutyOverrides[dateString] = nextSections[oldIndex].name;
+  });
+
+  rotationSettings.sections = nextSections;
+  rotationSettings.currentSection = nextSections[selectedStartIndex]?.name || nextSections[0].name;
+  rotationSettings.dutyStartDate = anchorDate;
+  rotationSettings.pattern = pattern;
+  rotationSettings.swapTime = "07:00";
+  rotationSettings.pitmanCycleVersion = 2;
 
   saveRotationSettings();
+  saveCrew();
+  saveDutyOverrides();
+  syncMemberSectionOptions();
   dashboardSectionView = null;
   renderSettings();
+};
+
+window.syncRotationStartSectionOptions = function() {
+  const select = document.getElementById("rotationCurrentSection");
+  if (!select) return;
+
+  const pattern = safeValue("rotationPattern", rotationSettings.pattern);
+  const sectionCount = dutyPatternDefinitions[pattern]?.sectionCount || 2;
+  const selectedIndex = Math.min(Number(select.value) || 0, sectionCount - 1);
+
+  select.innerHTML = "";
+  for (let index = 0; index < sectionCount; index++) {
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = safeValue(
+      `rotationSectionName${index}`,
+      rotationSettings.sections[index]?.name || `Section ${index + 1}`
+    ).trim() || `Section ${index + 1}`;
+    select.appendChild(option);
+  }
+
+  select.value = String(selectedIndex);
+};
+
+window.prepareSectionNamesForPattern = function(pattern) {
+  const definition = dutyPatternDefinitions[pattern];
+  if (!definition) return;
+
+  if (definition.sectionCount >= 3) {
+    const currentNames = [0, 1, 2, 3].map(index => safeValue(`rotationSectionName${index}`).toUpperCase());
+    if (currentNames[0] === "PORT" && currentNames[1] === "STBD") {
+      ["ALPHA", "BRAVO", "CHARLIE", "DELTA"].forEach((name, index) => {
+        setValue(`rotationSectionName${index}`, name);
+      });
+    }
+  }
+
+  syncRotationStartSectionOptions();
 };
 
 window.wipeAllPersonnel = function() {
@@ -7345,7 +8679,7 @@ function saveMemberFromModal(keepOpen = false) {
   const lastName = safeValue("memberLastName").trim();
   const title = getMemberTitle();
   const dept = safeValue("memberDept", "Deck");
-  const section = safeValue("memberSection", "PORT");
+  const section = safeValue("memberSection", getConfiguredSectionNames()[0] || "Day Worker");
   const status = safeValue("memberStatus", "Available");
   const lossDate = safeValue("lossDate");
   const lossReason = safeValue("lossReason", "None");
@@ -7514,6 +8848,12 @@ function setupEventListeners() {
 }
 
 // ---------- Initial Load ----------
+processDepartedMembers();
+syncMemberSectionOptions();
 setupEventListeners();
+updateSidebarVisibility();
 updateTopbarButton("dashboard");
+applyAppTheme();
+updateZuluStatus();
+setInterval(updateZuluStatus, 30000);
 renderDashboard();
