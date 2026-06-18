@@ -27,7 +27,7 @@
         <button class="nav-btn" data-page="leave">Leave</button>
         <button class="nav-btn" data-page="qualifications">Qualifications</button>
         <button class="nav-btn" data-page="calendar">Calendar</button>
-        <button class="nav-btn" data-page="smart-settings">Smart Ass...</button>
+        <button class="nav-btn" data-page="smart-settings">Smart Assignment</button>
         <button class="nav-btn" data-page="settings">Settings</button>
       </nav>
     </aside>
@@ -38,6 +38,8 @@
           <h2 id="page-title">Dashboard</h2>
           <p id="page-subtitle">Station readiness overview</p>
         </div>
+
+        <div class="zulu-status" id="zuluStatus" aria-live="polite"></div>
 
         <div class="header-actions" id="headerActions">
           <button class="primary-btn" id="openAddMember">+ Add Member</button>
@@ -89,6 +91,7 @@
         <option>Engineering</option>
         <option>Law Enforcement</option>
         <option>Command</option>
+        <option>Galley</option>
         <option>Other</option>
       </select>
 
@@ -131,6 +134,10 @@
         <label><input type="checkbox" value="BO"> BO</label>
         <label><input type="checkbox" value="BTM"> BTM</label>
         <label><input type="checkbox" value="CR"> CR</label>
+        <label><input type="checkbox" value="TAC CXC"> TAC CXC</label>
+        <label><input type="checkbox" value="TAC CR"> TAC CR</label>
+        <label><input type="checkbox" value="HWCXC"> HWCXC</label>
+        <label><input type="checkbox" value="SURFMAN"> SURFMAN</label>
         <label><input type="checkbox" value="B/I"> B/I</label>
       </div>
 
@@ -195,10 +202,32 @@
 
     <label>Asset Type</label>
     <select id="assetType">
+      <option>154 WPC Fast Response Cutter</option>
+      <option>110 WPB Island Class</option>
+      <option>87 WPB Marine Protector</option>
+      <option>75 WLIC River Buoy Tender</option>
+      <option>65 WLR River Tender</option>
+      <option>52 MLB</option>
+      <option>49 BUSL</option>
+      <option>47 MLB</option>
       <option>45 RB-M</option>
+      <option>42 SPC-NLB</option>
+      <option>38 SPC-TB</option>
+      <option>36 SPC-TB</option>
       <option>33 SPC-LE</option>
+      <option>32 TPSB</option>
       <option>29 RBS-II</option>
+      <option>27 SPC-SW</option>
+      <option>26 TANB</option>
+      <option>25 RB-S</option>
       <option>24 SPC-SW</option>
+      <option>23 OTH</option>
+      <option>18 SPC-AIR</option>
+      <option>Response Trailer</option>
+      <option>ATON Vehicle</option>
+      <option>Command Vehicle</option>
+      <option>Utility Vehicle</option>
+      <option>Trailer</option>
       <option>Other</option>
     </select>
 
@@ -217,6 +246,11 @@
       <option>LE Boarding</option>
       <option>Pursuit</option>
       <option>Training</option>
+      <option>Heavy Weather</option>
+      <option>Surf</option>
+      <option>ATON</option>
+      <option>Pollution Response</option>
+      <option>Port Security</option>
       <option>Multi-Asset</option>
     </select>
 
